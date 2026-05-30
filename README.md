@@ -52,7 +52,7 @@
 ### Server 服务器
 #### 功能
 1. 使用 `libevent` 实现高并发网络通信
-2. 通过MySQL管理用户数据 (`user_info`)、票务数据 (`ticket_info`)、预定记录 (`sub_ticket`)
+2. 通过MySQL管理用户数据 (`users`)、票务数据 (`tickets`)、预定记录 (`reservations`)
 3. 处理客户端请求，返回JSON格式响应
 
 #### 核心类
@@ -69,30 +69,41 @@
 
 ```sql
 -- 用户表
-create table user_info(
-    userid int primary key not null unique auto_increment,
-    tel char(11) not null unique,
-    uesrname varchar(20) not null,
-    passwd varchar(17) not null,
-    status tinyint not null
+create table users(
+   id int primary key not null unique auto_increment,
+   tel char(11) not null unique,
+   username varchar(64) not null,
+   password_hash varchar(255) not null,
+   salt varchar(64),
+   email varchar(255),
+   status tinyint not null default 1,
+   created_at datetime not null default current_timestamp,
+   updated_at datetime not null default current_timestamp on update current_timestamp,
+   last_login datetime
 );
 
 -- 票务表
-create table ticket_info(
-    tk_id int primary key not null unique auto_increment,
-    addr varchar(20),
-    max int, 
-    num int,
-    use_date date,
-    status TINYINT
+create table tickets(
+   id int primary key not null unique auto_increment,
+   title varchar(255) not null,
+   venue varchar(255),
+   total_seats int not null,
+   available_seats int not null,
+   event_date date not null,
+   status tinyint not null default 1,
+   created_at datetime not null default current_timestamp,
+   updated_at datetime not null default current_timestamp on update current_timestamp
 );
 
 -- 预定记录表
-create table sub_ticket(
-    yd_id int primary key not null unique auto_increment,
-    tk_id int not null,
-    tel char(11) not null,
-    curr_time DATETIME not null
+create table reservations(
+   id bigint primary key not null unique auto_increment,
+   user_id int not null,
+   ticket_id int not null,
+   quantity int not null default 1,
+   status enum('PENDING','CONFIRMED','CANCELLED','EXPIRED') not null default 'CONFIRMED',
+   created_at datetime not null default current_timestamp,
+   updated_at datetime not null default current_timestamp on update current_timestamp
 );
 ```
 #### 数据库表
@@ -167,7 +178,7 @@ create table sub_ticket(
    ```text
    输入手机号: 13812345678
    → 自动验证用户存在性
-   → 更新user_info.status字段
+   → 更新users.status字段
    ```
 
 #### 注意事项
@@ -180,7 +191,7 @@ create table sub_ticket(
    ```
 2. 票务状态字段控制逻辑：
    - 状态为0时用户端不可见
-   - 可通过`UPDATE ticket_info SET status=0 WHERE tk_id=1`手动下架票务
+   - 可通过`UPDATE tickets SET status=0 WHERE id=1`手动下架票务
 
 #### 安全建议
 1. 生产环境应使用独立数据库账号并限制权限
@@ -194,33 +205,62 @@ create table sub_ticket(
 ### 依赖安装
 ```bash
 # Ubuntu
-sudo apt install libevent-dev libjsoncpp-dev libmysqlclient-dev
+sudo apt install libevent-dev libjsoncpp-dev libmysqlclient-dev build-essential cmake
 ```
 
-### Server
+### 使用 CMake 构建（推荐）
 ```bash
-g++ -o ser ser.cpp -levent -ljsoncpp -lmysqlclient
-./ser
+mkdir -p build && cd build
+cmake ..
+cmake --build . --target all -j$(nproc)
 ```
 
-### Client
+构建完成后，可执行文件会输出到仓库根目录的 `bin/` 目录：
+
+- `bin/ser`
+- `bin/client`
+- `bin/admin`
+
+### 运行
+先启动服务器，再运行客户端或管理员：
 ```bash
-g++ -o client client.cpp -ljsoncpp
-./client
+# 在一个终端中启动服务
+./bin/ser
+
+# 在另一个终端中运行客户端（交互式）
+./bin/client
+
+# 或运行管理员工具
+./bin/admin
 ```
 
-### Admin
+若希望在当前终端保持交互而不被服务器日志打断，可将服务器置于后台并重定向日志：
 ```bash
-g++ -o admin admin.cpp -lmysqlclient
-./admin
+# 后台运行并把日志写入 bin/ser.log
+./bin/ser > bin/ser.log 2>&1 &
 ```
 
 ### Mysql
 ```sql
-create database Project_DB;
-use Project_DB;
+create database hyperticket;
+use hyperticket;
 ```
-创建数据库后，请创建表，表结构见上文。
+服务端启动会尝试连接并使用 `config.json` 中的 MySQL 配置，若数据库不存在请先创建。
+
+### 配置文件
+`config.json` 控制服务端/客户端/管理端的连接信息与线程数量。
+
+### 数据库初始化
+仓库包含 `db/init.sql`，用于初始化或迁移数据库结构。建议先在 MySQL 中运行该脚本：
+
+```bash
+# 使用有权限的 MySQL 用户运行（示例使用 root）
+mysql -u root -p < db/init.sql
+```
+
+脚本会创建 `hyperticket` 数据库及必要的表：`users`, `tickets`, `reservations`, `admins`, `reservation_audit`。
+请务必手动运行该脚本，`ser` 进程不会自动替你创建或修改数据库表结构。
+应用端应使用事务（SELECT ... FOR UPDATE）来安全地扣减库存并插入 `reservations`，避免超卖。
 ---
 ## Win环境配置
 
@@ -338,9 +378,9 @@ iphlpapi.lib
 
 ## 注意事项
 
-1. 确保MySQL服务已启动，且数据库`Project_DB`存在（配置见`ser.cpp`中`mysql_client`构造函数）
+1. 确保MySQL服务已启动，且数据库账号密码与`config.json`一致
 2. 若登录失败，检查SQL语句拼写（如`uesrname`应为`username`）
-3. 服务器默认监听`127.0.0.1:6000`，可按需修改`socket_listen`类参数
+3. 服务器默认监听`127.0.0.1:7000`，可通过`config.json`修改
 
 ## 改进方向
 1. **安全性增强**  

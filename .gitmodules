@@ -1,0 +1,3 @@
+[submodule "ChronoLite"]
+	path = ChronoLite
+	url = https://github.com/shanchuann/ChronoLite

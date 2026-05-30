@@ -1,0 +1,26 @@
+{
+  "db": {
+    "host": "127.0.0.1",
+    "port": 3306,
+    "user": "root",
+    "password": "your-db-password",
+    "name": "hyperticket",
+    "pool_size": 8
+  },
+  "server": {
+    "ip": "127.0.0.1",
+    "port": 7000,
+    "io_threads": 4,
+    "worker_threads": 8
+  },
+  "log": {
+    "basename": "hyperticket",
+    "roll_size": 16777216,
+    "flush_interval": 3,
+    "level": "INFO"
+  },
+  "schedule": {
+    "stats_interval_ms": 60000,
+    "ticket_status_interval_ms": 3600000
+  }
+}

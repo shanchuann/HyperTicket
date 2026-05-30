@@ -26,3 +26,7 @@ logs/
 *.swp
 *.swo
 .DS_Store
+
+# Local secrets / runtime config (copy config.example.json -> config.json)
+config.json
+.env

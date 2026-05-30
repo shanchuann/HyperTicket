@@ -126,7 +126,9 @@ namespace shanchuan
             else
             {
                 void (TcpConnection::*fp)(const std::string &) = &TcpConnection::sendInLoop;
-                loop_->runInLoop(std::bind(fp, this, message.c_str()));
+                // 按值绑定 message：跨线程时拷贝进 functor，确保 loop 线程执行前数据仍存活。
+                // （原先绑定 message.c_str() 会传入悬垂指针，导致发送出 6 字节指针垃圾。）
+                loop_->runInLoop(std::bind(fp, this, message));
             }
         }
     }

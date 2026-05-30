@@ -21,6 +21,8 @@ namespace hyperticket
         int port = 7000;
         int io_threads = 4;
         int worker_threads = 8;
+        int max_connections = 1000;     // 全局最大并发连接数
+        int max_requests_per_sec = 20;  // 单连接每秒最大请求数
     };
 
     struct LogConfig

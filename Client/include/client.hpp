@@ -85,6 +85,7 @@ private:
     bool running;
     string username;
     string usertel;
+    string token;       // 登录后服务端签发的会话令牌，用于后续鉴权
 
     int user_op;
 

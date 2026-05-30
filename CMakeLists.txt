@@ -88,3 +88,8 @@ add_executable(test_timestamp tests/test_timestamp.cpp ChronoLite/src/Timestamp.
 target_include_directories(test_timestamp PRIVATE ChronoLite/include)
 target_link_libraries(test_timestamp PRIVATE Threads::Threads)
 add_test(NAME test_timestamp COMMAND $<TARGET_FILE:test_timestamp>)
+
+add_executable(test_session tests/test_session.cpp)
+target_include_directories(test_session PRIVATE Server/include)
+target_link_libraries(test_session PRIVATE Threads::Threads)
+add_test(NAME test_session COMMAND $<TARGET_FILE:test_session>)

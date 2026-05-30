@@ -126,6 +126,8 @@ namespace hyperticket
             cfg.server.port = getInt(server, "port", cfg.server.port);
             cfg.server.io_threads = getInt(server, "io_threads", cfg.server.io_threads);
             cfg.server.worker_threads = getInt(server, "worker_threads", cfg.server.worker_threads);
+            cfg.server.max_connections = getInt(server, "max_connections", cfg.server.max_connections);
+            cfg.server.max_requests_per_sec = getInt(server, "max_requests_per_sec", cfg.server.max_requests_per_sec);
         }
 
         if (root.isMember("log"))

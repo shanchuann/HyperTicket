@@ -130,6 +130,7 @@ LOGINPWD:
         dl_flg = true;
         username = another["username"].asString();
         usertel = tel;
+        token = another["token"].asString();  // 保存会话令牌
         cout<<"登陆成功"<<endl;
     }
     else{
@@ -269,7 +270,7 @@ void socket_client::order(){
     
     Json::Value val;
     val["type"] = ORDER;
-    val["tel"] = usertel;
+    val["token"] = token;
     val["index"] = index;
     if(!send_json(val)){
         cout<<"发送失败"<<endl;
@@ -293,7 +294,7 @@ void socket_client::order(){
 void socket_client::view_my(){
     Json::Value val;
     val["type"] = VIEW_MY;
-    val["tel"] = usertel;  // 发送用户手机号用于查询该用户的预定
+    val["token"] = token;  // 凭会话令牌查询本人预定
     if(!send_json(val)){
         cout<<"发送失败"<<endl;
         return;
@@ -334,7 +335,7 @@ void socket_client::cancel(){
 
     Json::Value val;
     val["type"] = CANCEL;
-    val["tel"] = usertel;
+    val["token"] = token;
     val["index"] = index;
     if(!send_json(val)){
         cout<<"发送失败"<<endl;

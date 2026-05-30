@@ -1,9 +1,12 @@
 #include "ser.hpp"
 
 #include "../../Common/include/AppConfig.hpp"
+#include "../include/SessionManager.hpp"
+#include "../include/MysqlStmt.hpp"
 #include "../../SqlConnPool/include/ConnectionPool.hpp"
 #include "../../ChronoLite/include/AsynLogging.hpp"
 #include "../../ChronoLite/include/Logger.hpp"
+#include "../../ChronoLite/include/Timestamp.hpp"
 #include "../../FixedThreadPool/include/FixedThreadPool.hpp"
 #include "../../Inet/include/Buffer.hpp"
 #include "../../Inet/include/EventLoop.hpp"
@@ -15,6 +18,7 @@
 #include <mysql/mysql.h>
 
 #include <atomic>
+#include <any>
 #include <sstream>
 #include <algorithm>
 #include <iomanip>
@@ -24,6 +28,41 @@ using shanchuan::TcpConnectionPtr;
 
 namespace
 {
+    // 当前时间（毫秒），用于 SessionManager 的 TTL 计算。
+    int64_t nowMs()
+    {
+        return logsys::Timestamp::Now().getMicroSec() / 1000;
+    }
+
+    // 单连接令牌桶限流器，存放于 TcpConnection 的 context 中。
+    // 同一连接的回调始终在同一 IO 线程执行（one loop per thread），故无需加锁。
+    struct RateLimiter
+    {
+        double tokens;        // 当前令牌数
+        double capacity;      // 桶容量 = 每秒最大请求数
+        double refillPerMs;   // 每毫秒补充的令牌
+        int64_t lastMs;       // 上次补充时间
+
+        explicit RateLimiter(int perSec)
+            : tokens(perSec), capacity(perSec),
+              refillPerMs(perSec / 1000.0), lastMs(nowMs()) {}
+
+        // 尝试消费一个令牌；无令牌返回 false（应丢弃/拒绝该请求）。
+        bool allow()
+        {
+            int64_t now = nowMs();
+            tokens += (now - lastMs) * refillPerMs;
+            if (tokens > capacity) tokens = capacity;
+            lastMs = now;
+            if (tokens >= 1.0)
+            {
+                tokens -= 1.0;
+                return true;
+            }
+            return false;
+        }
+    };
+
     std::string hashPassword(const std::string &password)
     {
         // FNV-1a 64-bit for deterministic password hashing in this codebase.
@@ -126,7 +165,8 @@ namespace
     class TicketService
     {
     public:
-        explicit TicketService(shanchuan::ConnectionPool *pool) : pool_(pool) {}
+        TicketService(shanchuan::ConnectionPool *pool, hyperticket::SessionManager *sessions)
+            : pool_(pool), sessions_(sessions) {}
 
         Json::Value handleRequest(const Json::Value &req)
         {
@@ -190,6 +230,7 @@ namespace
 
     private:
         shanchuan::ConnectionPool *pool_;
+        hyperticket::SessionManager *sessions_;
 
         Json::Value login(const Json::Value &req)
         {
@@ -204,35 +245,33 @@ namespace
             shanchuan::ConnectionGuard raii(&conn, pool_);
             if (!conn) return makeError("DB_UNAVAILABLE");
 
-            std::string sql = "SELECT username, password_hash, status FROM users WHERE tel = '" + tel + "'";
-            if (mysql_query(conn, sql.c_str()) != 0)
+            hyperticket::MysqlStmt st(conn, "SELECT id, username, password_hash, status FROM users WHERE tel = ?");
+            if (!st.ok()) return makeError("DB_QUERY");
+            st.bindString(0, tel);
+            if (!st.execute() || !st.bindResults(4))
             {
                 return makeError("DB_QUERY");
             }
-
-            MYSQL_RES *res = mysql_store_result(conn);
-            if (!res) return makeError("DB_RESULT");
-            if (mysql_num_rows(res) != 1)
+            if (!st.fetch())
             {
-                mysql_free_result(res);
                 return makeError("USER_NOT_FOUND");
             }
-            MYSQL_ROW row = mysql_fetch_row(res);
-            std::string dbPass = row[1] ? row[1] : "";
-            std::string status = row[2] ? row[2] : "0";
+            int64_t userId = st.getInt(0);
+            std::string username = st.getString(1);
+            std::string dbPass = st.getString(2);
+            std::string status = st.getString(3);
             if (status != "1")
             {
-                mysql_free_result(res);
                 return makeError("BLACKLISTED");
             }
             if (dbPass != hashPassword(passwd))
             {
-                mysql_free_result(res);
                 return makeError("PASSWD_ERROR");
             }
             Json::Value resval = makeOk();
-            resval["username"] = row[0] ? row[0] : "";
-            mysql_free_result(res);
+            resval["username"] = username;
+            // 签发会话 token：后续 order/cancel/viewMy 凭此识别用户，不再信任客户端自报 tel。
+            resval["token"] = sessions_->create(tel, userId, nowMs());
             return resval;
         }
 
@@ -250,8 +289,12 @@ namespace
             shanchuan::ConnectionGuard raii(&conn, pool_);
             if (!conn) return makeError("DB_UNAVAILABLE");
 
-            std::string sql = "INSERT INTO users (tel, username, password_hash, status) VALUES('" + tel + "','" + name + "','" + hashPassword(passwd) + "',1)";
-            if (mysql_query(conn, sql.c_str()) != 0)
+            hyperticket::MysqlStmt st(conn, "INSERT INTO users (tel, username, password_hash, status) VALUES(?,?,?,1)");
+            if (!st.ok()) return makeError("DB_INSERT");
+            st.bindString(0, tel);
+            st.bindString(1, name);
+            st.bindString(2, hashPassword(passwd));
+            if (!st.execute())
             {
                 return makeError("DB_INSERT");
             }
@@ -296,8 +339,14 @@ namespace
         Json::Value orderTicket(const Json::Value &req)
         {
             int tk_id = req.get("index", -1).asInt();
-            std::string tel = req.get("tel", "").asString();
-            if (tk_id <= 0 || tel.size() != 11)
+            // 身份来自 token，而非客户端自报的 tel，杜绝越权下单。
+            std::string tel;
+            int64_t sessionUserId = 0;
+            if (!sessions_->resolve(req.get("token", "").asString(), nowMs(), tel, sessionUserId))
+            {
+                return makeError("UNAUTHORIZED");
+            }
+            if (tk_id <= 0)
             {
                 return makeError("INVALID_INPUT");
             }
@@ -310,9 +359,11 @@ namespace
                 return makeError("DB_BEGIN");
             }
 
-            // find user id by tel
-            std::string sUser = "SELECT id FROM users WHERE tel = '" + tel + "'";
-            if (mysql_query(conn, sUser.c_str()) != 0)
+            int user_id = static_cast<int>(sessionUserId);
+
+            // Lock the ticket row for update to prevent oversell
+            std::string s1 = "SELECT available_seats, status FROM tickets WHERE id = " + std::to_string(tk_id) + " FOR UPDATE";
+            if (mysql_query(conn, s1.c_str()) != 0)
             {
                 mysql_query(conn, "ROLLBACK");
                 return makeError("DB_QUERY");
@@ -322,27 +373,9 @@ namespace
             {
                 if (res) mysql_free_result(res);
                 mysql_query(conn, "ROLLBACK");
-                return makeError("USER_NOT_FOUND");
-            }
-            MYSQL_ROW row = mysql_fetch_row(res);
-            int user_id = row[0] ? atoi(row[0]) : 0;
-            mysql_free_result(res);
-
-            // Lock the ticket row for update to prevent oversell
-            std::string s1 = "SELECT available_seats, status FROM tickets WHERE id = " + std::to_string(tk_id) + " FOR UPDATE";
-            if (mysql_query(conn, s1.c_str()) != 0)
-            {
-                mysql_query(conn, "ROLLBACK");
-                return makeError("DB_QUERY");
-            }
-            res = mysql_store_result(conn);
-            if (!res || mysql_num_rows(res) != 1)
-            {
-                if (res) mysql_free_result(res);
-                mysql_query(conn, "ROLLBACK");
                 return makeError("TICKET_NOT_FOUND");
             }
-            row = mysql_fetch_row(res);
+            MYSQL_ROW row = mysql_fetch_row(res);
             int available = row[0] ? atoi(row[0]) : 0;
             int status = row[1] ? atoi(row[1]) : 0;
             mysql_free_result(res);
@@ -372,10 +405,15 @@ namespace
                 return makeError("DB_INSERT");
             }
 
-            // Insert audit record
-            std::string sAudit = "INSERT INTO reservation_audit (reservation_id, action, detail) VALUES(LAST_INSERT_ID(), 'CREATE', 'user:" + tel + "')";
-            // best-effort: ignore audit errors
-            mysql_query(conn, sAudit.c_str());
+            // Insert audit record (parameterized; tel comes from the verified session)
+            {
+                hyperticket::MysqlStmt sa(conn, "INSERT INTO reservation_audit (reservation_id, action, detail) VALUES(LAST_INSERT_ID(), 'CREATE', ?)");
+                if (sa.ok())
+                {
+                    sa.bindString(0, "user:" + tel);
+                    sa.execute(); // best-effort: ignore audit errors
+                }
+            }
 
             mysql_query(conn, "COMMIT");
             return makeOk();
@@ -383,50 +421,58 @@ namespace
 
         Json::Value viewMyTickets(const Json::Value &req)
         {
-            std::string tel = req.get("tel", "").asString();
-            if (tel.size() != 11)
+            std::string tel;
+            int64_t userId = 0;
+            if (!sessions_->resolve(req.get("token", "").asString(), nowMs(), tel, userId))
             {
-                return makeError("INVALID_INPUT");
+                return makeError("UNAUTHORIZED");
             }
             MYSQL *conn = nullptr;
             shanchuan::ConnectionGuard raii(&conn, pool_);
             if (!conn) return makeError("DB_UNAVAILABLE");
 
             // Join reservations with users and tickets, exclude cancelled
-            std::string sql = "SELECT r.id, r.ticket_id, t.title, t.venue, t.event_date, r.status FROM reservations r JOIN users u ON r.user_id = u.id JOIN tickets t ON r.ticket_id = t.id WHERE u.tel = '" + tel + "' AND r.status != 'CANCELLED'";
-            if (mysql_query(conn, sql.c_str()) != 0)
+            hyperticket::MysqlStmt st(conn,
+                "SELECT r.id, r.ticket_id, t.title, t.venue, t.event_date, r.status "
+                "FROM reservations r JOIN users u ON r.user_id = u.id "
+                "JOIN tickets t ON r.ticket_id = t.id "
+                "WHERE u.tel = ? AND r.status != 'CANCELLED'");
+            if (!st.ok()) return makeError("DB_QUERY");
+            st.bindString(0, tel);
+            if (!st.execute() || !st.bindResults(6))
             {
                 return makeError("DB_QUERY");
             }
 
-            MYSQL_RES *res = mysql_store_result(conn);
-            if (!res) return makeError("DB_RESULT");
-
-            int num = mysql_num_rows(res);
             Json::Value resval = makeOk();
-            resval["num"] = num;
-            for (int i = 0; i < num; ++i)
+            int num = 0;
+            while (st.fetch())
             {
-                MYSQL_ROW row = mysql_fetch_row(res);
                 Json::Value tmp;
-                tmp["id"] = row[0] ? row[0] : "";
-                tmp["tk_id"] = row[1] ? row[1] : "";
-                tmp["title"] = row[2] ? row[2] : "";
-                tmp["addr"] = row[3] ? row[3] : "";
-                tmp["use_date"] = row[4] ? row[4] : "";
-                tmp["event_date"] = row[4] ? row[4] : "";
-                tmp["status"] = row[5] ? row[5] : "";
+                tmp["id"] = st.getString(0);
+                tmp["tk_id"] = st.getString(1);
+                tmp["title"] = st.getString(2);
+                tmp["addr"] = st.getString(3);
+                tmp["use_date"] = st.getString(4);
+                tmp["event_date"] = st.getString(4);
+                tmp["status"] = st.getString(5);
                 resval["arr"].append(tmp);
+                ++num;
             }
-            mysql_free_result(res);
+            resval["num"] = num;
             return resval;
         }
 
         Json::Value cancelTicket(const Json::Value &req)
         {
             int index = req.get("index", -1).asInt();
-            std::string tel = req.get("tel", "").asString();
-            if (index <= 0 || tel.size() != 11)
+            std::string tel;
+            int64_t userId = 0;
+            if (!sessions_->resolve(req.get("token", "").asString(), nowMs(), tel, userId))
+            {
+                return makeError("UNAUTHORIZED");
+            }
+            if (index <= 0)
             {
                 return makeError("INVALID_INPUT");
             }
@@ -439,26 +485,35 @@ namespace
                 return makeError("DB_BEGIN");
             }
 
-            // find reservation and ensure ownership
-            std::string sFind = "SELECT r.id, r.ticket_id, r.quantity, r.status FROM reservations r JOIN users u ON r.user_id = u.id WHERE r.id = " + std::to_string(index) + " AND u.tel = '" + tel + "' FOR UPDATE";
-            if (mysql_query(conn, sFind.c_str()) != 0)
+            // find reservation and ensure ownership (user_id from verified session)
+            int res_id = 0, tk_id = 0, qty = 1;
+            std::string rstatus;
             {
-                mysql_query(conn, "ROLLBACK");
-                return makeError("DB_QUERY");
+                hyperticket::MysqlStmt sf(conn,
+                    "SELECT r.id, r.ticket_id, r.quantity, r.status FROM reservations r "
+                    "WHERE r.id = ? AND r.user_id = ? FOR UPDATE");
+                if (!sf.ok())
+                {
+                    mysql_query(conn, "ROLLBACK");
+                    return makeError("DB_QUERY");
+                }
+                sf.bindInt(0, index);
+                sf.bindInt(1, userId);
+                if (!sf.execute() || !sf.bindResults(4))
+                {
+                    mysql_query(conn, "ROLLBACK");
+                    return makeError("DB_QUERY");
+                }
+                if (!sf.fetch())
+                {
+                    mysql_query(conn, "ROLLBACK");
+                    return makeError("ORDER_NOT_FOUND");
+                }
+                res_id = static_cast<int>(sf.getInt(0));
+                tk_id = static_cast<int>(sf.getInt(1));
+                qty = static_cast<int>(sf.getInt(2));
+                rstatus = sf.getString(3);
             }
-            MYSQL_RES *res = mysql_store_result(conn);
-            if (!res || mysql_num_rows(res) != 1)
-            {
-                if (res) mysql_free_result(res);
-                mysql_query(conn, "ROLLBACK");
-                return makeError("ORDER_NOT_FOUND");
-            }
-            MYSQL_ROW row = mysql_fetch_row(res);
-            int res_id = row[0] ? atoi(row[0]) : 0;
-            int tk_id = row[1] ? atoi(row[1]) : 0;
-            int qty = row[2] ? atoi(row[2]) : 1;
-            std::string rstatus = row[3] ? row[3] : "";
-            mysql_free_result(res);
 
             if (rstatus != "CONFIRMED")
             {
@@ -482,9 +537,16 @@ namespace
                 return makeError("DB_UPDATE");
             }
 
-            // audit
-            std::string sAudit = "INSERT INTO reservation_audit (reservation_id, action, detail) VALUES(" + std::to_string(res_id) + ", 'CANCEL', 'user:" + tel + "')";
-            mysql_query(conn, sAudit.c_str());
+            // audit (parameterized; tel from verified session)
+            {
+                hyperticket::MysqlStmt sa(conn, "INSERT INTO reservation_audit (reservation_id, action, detail) VALUES(?, 'CANCEL', ?)");
+                if (sa.ok())
+                {
+                    sa.bindInt(0, res_id);
+                    sa.bindString(1, "user:" + tel);
+                    sa.execute();
+                }
+            }
 
             mysql_query(conn, "COMMIT");
             return makeOk();
@@ -520,16 +582,38 @@ int main()
 
     shanchuan::FixedThreadPool workerPool(cfg.server.worker_threads);
     shanchuan::ScheduledThreadPool scheduler;
-    TicketService service(pool);
+    hyperticket::SessionManager sessions;
+    TicketService service(pool, &sessions);
 
     shanchuan::EventLoop loop;
     shanchuan::InetAddress listenAddr(cfg.server.ip, static_cast<uint16_t>(cfg.server.port));
     shanchuan::TcpServer server(&loop, listenAddr, "HyperTicket");
     server.setThreadNum(cfg.server.io_threads);
 
-    server.setConnectionCallback([](const TcpConnectionPtr &conn) {
-        std::string state = conn->connected() ? "UP" : "DOWN";
-        LOG_INFO << "connection " << conn->name() << " " << state;
+    std::atomic<int> connCount{0};
+    const int maxConn = cfg.server.max_connections;
+    const int maxRps = cfg.server.max_requests_per_sec;
+
+    server.setConnectionCallback([&connCount, maxConn, maxRps](const TcpConnectionPtr &conn) {
+        if (conn->connected())
+        {
+            int n = ++connCount;
+            if (n > maxConn)
+            {
+                LOG_WARN << "connection limit reached (" << maxConn << "), refusing " << conn->peerAddress().toIp();
+                --connCount;
+                conn->forceClose();
+                return;
+            }
+            // 为该连接安装独立的令牌桶限流器
+            conn->setContext(RateLimiter(maxRps));
+            LOG_INFO << "connection " << conn->name() << " UP (" << n << "/" << maxConn << ")";
+        }
+        else
+        {
+            --connCount;
+            LOG_INFO << "connection " << conn->name() << " DOWN";
+        }
     });
 
     server.setMessageCallback([&workerPool, &service](const TcpConnectionPtr &conn, Buffer *buf, shanchuan::Timestamp) {
@@ -545,6 +629,18 @@ int main()
             if (line.empty())
             {
                 continue;
+            }
+
+            // 单连接限流：超过每秒请求上限则拒绝该请求。
+            std::any *ctx = conn->getMutableContext();
+            if (ctx && ctx->has_value())
+            {
+                RateLimiter *rl = std::any_cast<RateLimiter>(ctx);
+                if (rl && !rl->allow())
+                {
+                    sendJson(conn, makeError("RATE_LIMITED"));
+                    continue;
+                }
             }
 
             Json::Value req;
@@ -571,6 +667,10 @@ int main()
     });
     scheduler.addRunEvery(cfg.schedule.ticket_status_interval_ms, [&service]() {
         service.refreshTicketStatus();
+    });
+    // 定时清理过期会话 token，避免内存无限增长。
+    scheduler.addRunEvery(60000, [&sessions]() {
+        sessions.purgeExpired(nowMs());
     });
 
     server.start();

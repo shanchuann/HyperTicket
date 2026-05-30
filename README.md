@@ -250,6 +250,24 @@ use hyperticket;
 ### 配置文件
 `config.json` 控制服务端/客户端/管理端的连接信息与线程数量。
 
+> ⚠️ `config.json` 与 `.env` 含数据库密码，已被 `.gitignore` 排除，不在版本库中。
+> 首次使用请从模板复制并填入真实值：
+>
+> ```bash
+> cp config.example.json config.json
+> # 然后编辑 config.json，填入数据库 host / user / password
+> ```
+>
+> 若缺少 `config.json` 或其格式错误，`ser` 与 `admin` 会直接报错退出（不再静默使用默认值），这是有意的安全设计。
+
+可选：用 `.env` 覆盖数据库连接项（优先级：进程环境变量 > `.env` > `config.json`）。`.env` 与 `config.json` 同目录，键名为 `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME`，模板见 `.env.example`。
+
+### 数据库依赖
+本项目不内置数据库，需要一个可访问的 MySQL 实例（在 `config.json` 的 `db` 段配置）。
+
+- **本机 MySQL**：`host` 填 `127.0.0.1`，按下方「数据库初始化」建库建表即可。
+- **WSL 连 Windows 上的 MySQL**：在 WSL2 镜像网络模式（`/etc/wsl.conf` 中 `networkingMode=mirrored`）下，Windows 监听的端口会镜像进 WSL 的 `localhost`，因此 `host` 同样填 `127.0.0.1`（不要用 `192.168.x.x` 之类的虚拟网卡地址）。注意此时数据库的生命周期由 Windows 侧掌控——Windows 上的 MySQL 未启动时，项目将无法连接。
+
 ### 数据库初始化
 仓库包含 `db/init.sql`，用于初始化或迁移数据库结构。建议先在 MySQL 中运行该脚本：
 

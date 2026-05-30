@@ -1,7 +1,7 @@
 #include "ser.hpp"
 
 #include "../../Common/include/AppConfig.hpp"
-#include "../../CGImysql/include/SqlConnectionPool.hpp"
+#include "../../SqlConnPool/include/ConnectionPool.hpp"
 #include "../../ChronoLite/include/AsynLogging.hpp"
 #include "../../ChronoLite/include/Logger.hpp"
 #include "../../FixedThreadPool/include/FixedThreadPool.hpp"
@@ -126,7 +126,7 @@ namespace
     class TicketService
     {
     public:
-        explicit TicketService(shanchuan::connection_pool *pool) : pool_(pool) {}
+        explicit TicketService(shanchuan::ConnectionPool *pool) : pool_(pool) {}
 
         Json::Value handleRequest(const Json::Value &req)
         {
@@ -155,7 +155,7 @@ namespace
         bool refreshTicketStatus()
         {
             MYSQL *conn = nullptr;
-            shanchuan::connectionRAII raii(&conn, pool_);
+            shanchuan::ConnectionGuard raii(&conn, pool_);
             if (!conn) return false;
             const char *sql = "UPDATE tickets SET status = 0 WHERE event_date < CURDATE() AND status != 0";
             if (mysql_query(conn, sql) != 0)
@@ -169,7 +169,7 @@ namespace
         bool logStats()
         {
             MYSQL *conn = nullptr;
-            shanchuan::connectionRAII raii(&conn, pool_);
+            shanchuan::ConnectionGuard raii(&conn, pool_);
             if (!conn) return false;
             const char *sql = "SELECT (SELECT COUNT(*) FROM users), (SELECT COUNT(*) FROM tickets), (SELECT COUNT(*) FROM reservations)";
             if (mysql_query(conn, sql) != 0)
@@ -189,7 +189,7 @@ namespace
         }
 
     private:
-        shanchuan::connection_pool *pool_;
+        shanchuan::ConnectionPool *pool_;
 
         Json::Value login(const Json::Value &req)
         {
@@ -201,7 +201,7 @@ namespace
             }
 
             MYSQL *conn = nullptr;
-            shanchuan::connectionRAII raii(&conn, pool_);
+            shanchuan::ConnectionGuard raii(&conn, pool_);
             if (!conn) return makeError("DB_UNAVAILABLE");
 
             std::string sql = "SELECT username, password_hash, status FROM users WHERE tel = '" + tel + "'";
@@ -247,7 +247,7 @@ namespace
             }
 
             MYSQL *conn = nullptr;
-            shanchuan::connectionRAII raii(&conn, pool_);
+            shanchuan::ConnectionGuard raii(&conn, pool_);
             if (!conn) return makeError("DB_UNAVAILABLE");
 
             std::string sql = "INSERT INTO users (tel, username, password_hash, status) VALUES('" + tel + "','" + name + "','" + hashPassword(passwd) + "',1)";
@@ -261,7 +261,7 @@ namespace
         Json::Value viewTickets()
         {
             MYSQL *conn = nullptr;
-            shanchuan::connectionRAII raii(&conn, pool_);
+            shanchuan::ConnectionGuard raii(&conn, pool_);
             if (!conn) return makeError("DB_UNAVAILABLE");
 
             const char *sql = "SELECT id, title, venue, total_seats, available_seats, event_date, status FROM tickets WHERE status = 1";
@@ -302,7 +302,7 @@ namespace
                 return makeError("INVALID_INPUT");
             }
             MYSQL *conn = nullptr;
-            shanchuan::connectionRAII raii(&conn, pool_);
+            shanchuan::ConnectionGuard raii(&conn, pool_);
             if (!conn) return makeError("DB_UNAVAILABLE");
 
             if (mysql_query(conn, "BEGIN") != 0)
@@ -389,7 +389,7 @@ namespace
                 return makeError("INVALID_INPUT");
             }
             MYSQL *conn = nullptr;
-            shanchuan::connectionRAII raii(&conn, pool_);
+            shanchuan::ConnectionGuard raii(&conn, pool_);
             if (!conn) return makeError("DB_UNAVAILABLE");
 
             // Join reservations with users and tickets, exclude cancelled
@@ -431,7 +431,7 @@ namespace
                 return makeError("INVALID_INPUT");
             }
             MYSQL *conn = nullptr;
-            shanchuan::connectionRAII raii(&conn, pool_);
+            shanchuan::ConnectionGuard raii(&conn, pool_);
             if (!conn) return makeError("DB_UNAVAILABLE");
 
             if (mysql_query(conn, "BEGIN") != 0)
@@ -505,7 +505,8 @@ int main()
 
     if (!configError.empty())
     {
-        LOG_WARN << configError;
+        LOG_FATAL << "config load failed: " << configError;
+        return 1;
     }
 
     if (!ensureDatabaseAndTables(cfg.db))
@@ -514,7 +515,7 @@ int main()
         return 1;
     }
 
-    shanchuan::connection_pool *pool = shanchuan::connection_pool::GetInstance();
+    shanchuan::ConnectionPool *pool = shanchuan::ConnectionPool::GetInstance();
     pool->init(cfg.db.host, cfg.db.user, cfg.db.password, cfg.db.name, cfg.db.port, cfg.db.pool_size, 0);
 
     shanchuan::FixedThreadPool workerPool(cfg.server.worker_threads);

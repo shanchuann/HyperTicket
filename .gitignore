@@ -18,6 +18,9 @@ ser
 client
 admin
 
+# Compiled executables output dir (CMAKE_RUNTIME_OUTPUT_DIRECTORY)
+bin/
+
 *.log
 logs/
 

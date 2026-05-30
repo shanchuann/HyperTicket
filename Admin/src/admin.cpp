@@ -12,17 +12,18 @@ bool AdminManager::ConnectDB() {
     return true;
 }
 
-void AdminManager::LoadConfig() {
+bool AdminManager::LoadConfig() {
     std::string error;
     hyperticket::AppConfig cfg = hyperticket::AppConfig::Load("config.json", &error);
     if (!error.empty()) {
-        cout << "配置文件加载失败，使用默认配置: " << error << endl;
-        return;
+        cout << "配置文件加载失败: " << error << endl;
+        return false;
     }
     db_ip = cfg.db.host;
     db_user = cfg.db.user;
     db_name = cfg.db.name;
     db_passwd = cfg.db.password;
+    return true;
 }
 
 void AdminManager::PrintMenu() {
@@ -311,7 +312,9 @@ void AdminManager::Run() {
 
 int main() {
     AdminManager admin;
-    admin.LoadConfig();
+    if(!admin.LoadConfig()) {
+        return 1;
+    }
     if(!admin.ConnectDB()) {
         return 1;
     }

@@ -27,7 +27,7 @@ set(COMMON_SRC
 
 set(SERVER_SRC
 	Server/src/ser.cpp
-	CGImysql/src/SqlConnectionPool.cpp
+	SqlConnPool/src/ConnectionPool.cpp
 	ScheduledThreadPool/src/Timer.cpp
 	ScheduledThreadPool/src/TimerQueue.cpp
 	Inet/src/Acceptor.cpp
@@ -60,7 +60,7 @@ add_executable(ser ${SERVER_SRC} ${COMMON_SRC})
 target_include_directories(ser PRIVATE
 	Common/include
 	Server/include
-	CGImysql/include
+	SqlConnPool/include
 	Inet/include
 	ScheduledThreadPool/include
 	ChronoLite/include
@@ -75,3 +75,16 @@ target_link_libraries(client PRIVATE ${JSONCPP_LIB} Threads::Threads)
 add_executable(admin Admin/src/admin.cpp ${COMMON_SRC})
 target_include_directories(admin PRIVATE Common/include Admin/include)
 target_link_libraries(admin PRIVATE ${MYSQLCLIENT_LIB} ${JSONCPP_LIB} Threads::Threads)
+
+# ---- Unit tests (zero external deps, registered with CTest) ----
+enable_testing()
+
+add_executable(test_buffer tests/test_buffer.cpp Inet/src/Buffer.cpp)
+target_include_directories(test_buffer PRIVATE Inet/include)
+target_link_libraries(test_buffer PRIVATE Threads::Threads)
+add_test(NAME test_buffer COMMAND $<TARGET_FILE:test_buffer>)
+
+add_executable(test_timestamp tests/test_timestamp.cpp ChronoLite/src/Timestamp.cpp)
+target_include_directories(test_timestamp PRIVATE ChronoLite/include)
+target_link_libraries(test_timestamp PRIVATE Threads::Threads)
+add_test(NAME test_timestamp COMMAND $<TARGET_FILE:test_timestamp>)

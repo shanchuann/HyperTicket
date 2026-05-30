@@ -60,7 +60,7 @@ void socket_client::LoadConfig(){
     std::string error;
     hyperticket::AppConfig cfg = hyperticket::AppConfig::Load("config.json", &error);
     if (!error.empty()){
-        cout << "配置文件加载失败，使用默认配置: " << error << endl;
+        cout << "配置文件加载失败，使用默认服务器地址 127.0.0.1:7000: " << error << endl;
         return;
     }
     ips = cfg.server.ip;

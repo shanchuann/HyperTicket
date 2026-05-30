@@ -28,10 +28,7 @@ enum ADMIN_OP {
 class AdminManager {
 public:
     AdminManager() {
-        db_ip = "127.0.0.1";
-        db_user = "root";
-        db_name = "hyperticket";
-        db_passwd = "zbk";
+        // DB settings are populated by LoadConfig() from config.json / .env.
         running = true;
     }
     ~AdminManager() {
@@ -39,7 +36,7 @@ public:
     }
 
     bool ConnectDB();
-    void LoadConfig();
+    bool LoadConfig();
     void Run();
     void PrintMenu();
     

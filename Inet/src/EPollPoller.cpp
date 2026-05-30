@@ -26,14 +26,7 @@ namespace shanchuan
 
 Poller* Poller::newDefaultPoller(EventLoop* loop)
 {
-    //if (::getenv("USE_POLL"))
-    //{
-    //    return new PollPoller(loop);
-   // }
-   // else
-   // {
-        return new EPollPoller(loop);
-   // }
+    return new EPollPoller(loop);
 }
 static const int kNew = -1;    // Channel 要添加到map和epoll红黑树中
 static const int kAdded = 1;   // Channel 在map 和 epoll 的红黑树中
@@ -58,11 +51,6 @@ EPollPoller::~EPollPoller()
 
 Timestamp EPollPoller::poll(int timeoutMs, ChannelList* activeChannels)
 {
-    //int numEvents = ::epoll_wait(epollfd_,
-    //                           &*events_.begin(),
-    //                           static_cast<int>(events_.size()),
-    //                           timeoutMs);
-
 #ifndef NDEBUG
     for(auto &x : channels_)
     {

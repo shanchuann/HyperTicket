@@ -29,10 +29,8 @@
 
 // 第三方库头文件
 #ifdef _WIN32
-#include <event2/event.h> // Windows 上的 libevent
 #include <json/json.h>    // Windows 上的 jsoncpp
 #elif __linux__
-#include <event.h>        // Linux 上的 libevent
 #include <jsoncpp/json/json.h> // Linux 上的 jsoncpp
 #endif
 using namespace std;

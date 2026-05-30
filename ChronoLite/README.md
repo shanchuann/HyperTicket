@@ -15,50 +15,31 @@
 
 ```
 ChronoLite/
-├── logsys/
-│   ├── include/
-│   │   ├── Timestamp.hpp    # 时间戳类声明
-│   │   ├── LogMessage.hpp   # 日志消息类声明
-│   │   ├── Logger.hpp       # 日志核心类声明
-│   │   ├── LogCommon.hpp    # 日志等级定义
-│   └── src/
-│       ├── Timestamp.cpp    # 时间戳实现
-│       ├── LogMessage.cpp   # 日志消息实现
-│       └── Logger.cpp       # 日志核心实现
-├── test.cpp                 # 测试程序（示例/单文件演示）
-├── CMakeLists.txt           # CMake 构建配置
-├── .gitignore               # 忽略 build/ bin/
-└── README.md                # 项目说明文档
+├── include/
+│   ├── Timestamp.hpp       # 微秒级时间戳类
+│   ├── LogCommon.hpp       # 日志等级 LOG_LEVEL 定义
+│   ├── LogMessage.hpp      # 单条日志消息（表头 + 流式正文）
+│   ├── Logger.hpp          # 同步日志门面 + LOG_XXX 宏
+│   ├── LogFile.hpp         # 日志文件管理（按天 / 按大小滚动）
+│   ├── AppendFile.hpp      # 底层带缓冲文件写入
+│   ├── AsynLogging.hpp     # 异步日志（双缓冲 + 后台线程）
+│   └── CountDownLatch.hpp  # 倒计时同步原语
+├── src/                    # 上述各类的实现
+└── README.md
 ```
 
-## 编译与运行
+## 编译
 
-1. 安装 CMake（≥3.10）和 C++ 编译器（g++/MSVC）
-2. 创建并进入 build 目录：
-   ```bash
-   mkdir build && cd build
-   ```
-3. 配置项目：
-   ```bash
-   cmake ..
-   ```
-4. 编译项目：
-   ```bash
-   make
-   ```
-5. 运行测试：
-   ```bash
-   ./bin/chronolite
-   ```
-   
-快速复制运行（Linux 示例）：
+ChronoLite 作为 HyperTicket 的一个子模块，由仓库根目录的 `CMakeLists.txt` 统一编译，
+源文件被链入服务端可执行文件 `ser`，无独立构建产物。
 
-```bash
-mkdir -p build && cd build
-cmake ..
-make -j$(nproc)
-./bin/chronolite
-```
+命名空间为 `logsys`，标准库依赖 C++11（`std::thread`/`std::mutex`/`std::condition_variable` 等），
+无第三方依赖。时间获取在 Linux 用 `gettimeofday`，Windows 用 `std::chrono`。
+
+## 同步 vs 异步
+
+- **同步 `Logger`**：日志在 `Logger` 析构时立即经 `OutputFun` 回调输出，默认写 stdout。
+- **异步 `AsynLogging`**：前端 `append()` 写入当前缓冲，满则入队；后台工作线程批量落盘（双缓冲，避免阻塞业务线程）。HyperTicket 服务端即采用此模式。
 
 ## API 说明
 
@@ -107,6 +88,16 @@ public:
    LogFile(const std::string& basename, size_t rollSize=1024*128, int flushInterval=3, int checkEventN=30, bool threadSafe=true);
    ~LogFile();
    void append(const std::string& msg);
+   void flush();
+};
+
+// AsynLogging (异步日志：双缓冲 + 后台线程)
+class AsynLogging {
+public:
+   AsynLogging(const std::string& basename, size_t rollSize, int flushInterval=3);
+   void start();                       // 启动后台落盘线程
+   void stop();                        // 停止并冲刷
+   void append(const std::string& msg);// 前端写入（线程安全）
    void flush();
 };
 
@@ -203,6 +194,22 @@ int main() {
 ### 日志等级控制
 
 可通过环境变量或 Logger::SetLogLevel 控制日志输出等级，便于调试和生产环境切换。
+
+### 异步日志（HyperTicket 服务端用法）
+
+```cpp
+#include "AsynLogging.hpp"
+#include "Logger.hpp"
+
+logsys::AsynLogging asyncLog("hyperticket", 16 * 1024 * 1024, 3); // basename, rollSize, flushInterval
+asyncLog.start();
+logsys::Logger::SetOuput([&](const std::string &msg) { asyncLog.append(msg); });
+logsys::Logger::SetFlush([&]() { asyncLog.flush(); });
+
+LOG_INFO << "server started";   // 前端不阻塞，由后台线程批量落盘
+// 程序退出前
+asyncLog.stop();
+```
 
 ### 时间戳差值与运算
 

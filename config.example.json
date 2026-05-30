@@ -10,7 +10,7 @@
   "server": {
     "ip": "127.0.0.1",
     "port": 7000,
-    "io_threads": 4,
+    "io_threads": 1,
     "worker_threads": 8,
     "max_connections": 1000,
     "max_requests_per_sec": 20

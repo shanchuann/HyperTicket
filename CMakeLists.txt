@@ -25,8 +25,16 @@ set(COMMON_SRC
 	Common/src/AppConfig.cpp
 )
 
+# 领域层：服务层(含事务编排)。Repository/Service 头文件为 header-only，
+# 仅 TicketService 的实现需编译，ser 与 admin 共享。
+set(DOMAIN_SRC
+	Domain/src/service/TicketService.cpp
+	Domain/src/service/TicketServiceTxn.cpp
+)
+
 set(SERVER_SRC
 	Server/src/ser.cpp
+	${DOMAIN_SRC}
 	SqlConnPool/src/ConnectionPool.cpp
 	ScheduledThreadPool/src/Timer.cpp
 	ScheduledThreadPool/src/TimerQueue.cpp
@@ -59,6 +67,7 @@ set(SERVER_SRC
 add_executable(ser ${SERVER_SRC} ${COMMON_SRC})
 target_include_directories(ser PRIVATE
 	Common/include
+	Domain/include
 	Server/include
 	SqlConnPool/include
 	Inet/include
@@ -73,7 +82,7 @@ target_include_directories(client PRIVATE Common/include Client/include)
 target_link_libraries(client PRIVATE ${JSONCPP_LIB} Threads::Threads)
 
 add_executable(admin Admin/src/admin.cpp ${COMMON_SRC})
-target_include_directories(admin PRIVATE Common/include Admin/include)
+target_include_directories(admin PRIVATE Common/include Domain/include Admin/include ChronoLite/include)
 target_link_libraries(admin PRIVATE ${MYSQLCLIENT_LIB} ${JSONCPP_LIB} Threads::Threads)
 
 # ---- Unit tests (zero external deps, registered with CTest) ----
@@ -93,3 +102,8 @@ add_executable(test_session tests/test_session.cpp)
 target_include_directories(test_session PRIVATE Server/include)
 target_link_libraries(test_session PRIVATE Threads::Threads)
 add_test(NAME test_session COMMAND $<TARGET_FILE:test_session>)
+
+add_executable(test_protocol tests/test_protocol.cpp)
+target_include_directories(test_protocol PRIVATE Common/include)
+target_link_libraries(test_protocol PRIVATE ${JSONCPP_LIB} Threads::Threads)
+add_test(NAME test_protocol COMMAND $<TARGET_FILE:test_protocol>)

@@ -1,10 +1,11 @@
 # HyperTicket 高性能票务预约系统
 
-> 基于C++实现的票务预约系统，支持用户注册、登录、票务查询、预订及取消功能  
-> 系统依赖：`libevent`, `jsoncpp`, `mysqlclient`  
-> 当前版本：v1.0 (仅支持Linux系统)
+> 基于 C++17 实现的高并发票务预约系统，支持用户注册、登录、票务查询、预订及取消功能
+> 系统依赖：`jsoncpp`、`mysqlclient`、`pthread`
+> 网络层为自研 Reactor 库 [Inet](Inet/README.md)（基于 epoll，**已替代早期的 libevent**）
+> 当前版本：v2.0 (仅支持 Linux 系统)
 >
-> 搁置工作：对于移植Win系统的工作出现了不可进行的错误，导致进度停滞
+> 搁置工作：移植 Windows 的工作此前已停滞；自切换到 Inet（依赖 epoll/timerfd/eventfd）后，Windows 移植暂不在计划内。
 
 ---
 
@@ -17,17 +18,27 @@
 ## 技术栈全景
 
 ### 1. 核心语言
-- **C++11**：作为系统主要开发语言
+- **C++17**：作为系统主要开发语言
 - **SQL**：用于数据库操作
 
 ### 2. 网络架构
 | 组件        | 技术方案                 | 说明                          |
 |------------|-------------------------|-----------------------------|
-| 通信协议    | TCP/IP                  | 可靠传输保证                  |
-| 并发模型    | libevent事件驱动         | 单线程事件循环处理高并发       |
+| 通信协议    | TCP/IP                  | 可靠传输，按 `\n` 分隔 JSON 行 |
+| 并发模型    | Inet 主从 Reactor（epoll）| one loop per thread，多 IO 线程 + 业务线程池 |
 | 数据序列化  | JSON（jsoncpp库）        | 请求/响应结构化数据交换        |
 
-### 3. 数据库系统
+### 3. 自研基础组件
+| 模块 | 作用 |
+|------|------|
+| [Inet](Inet/README.md) | 基于 epoll 的 Reactor 网络库 |
+| [ChronoLite](ChronoLite/README.md) | 异步日志（双缓冲 + 后台线程） |
+| [FixedThreadPool](FixedThreadPool/README.md) | 固定大小业务工作线程池 |
+| [ScheduledThreadPool](ScheduledThreadPool/README.md) | 定时任务（会话清理、票务巡检、统计） |
+| [SqlConnPool](SqlConnPool/README.md) | MySQL 连接池 |
+| [Common](Common/README.md) | 统一配置加载 `AppConfig` |
+
+### 4. 数据库系统
 - **MySQL 8.0+**：关系型数据库存储
 
 ## 协议设计
@@ -50,63 +61,34 @@
 ## 模块说明
 
 ### Server 服务器
+> 详细说明见 [Server/README.md](Server/README.md)。
+
 #### 功能
-1. 使用 `libevent` 实现高并发网络通信
-2. 通过MySQL管理用户数据 (`users`)、票务数据 (`tickets`)、预定记录 (`reservations`)
-3. 处理客户端请求，返回JSON格式响应
+1. 使用自研 [Inet](Inet/README.md) Reactor 库（epoll）实现高并发网络通信
+2. 通过 MySQL 管理用户数据 (`users`)、票务数据 (`tickets`)、预定记录 (`reservations`)，并写审计表 (`reservation_audit`)
+3. 处理客户端请求，返回 JSON 格式响应
 
-#### 核心类
-- **`mysql_client`**: 封装数据库操作  
-  - `mysql_ConnectServer()`: 连接数据库  
-  - `mysql_login()/mysql_register()`: 用户登录/注册  
-  - `mysql_Subscribe_Ticket()/mysql_Cancel_Ticket()`: 票务预定/取消  
-  - 事务管理: `mysql_user_begin()`, `mysql_user_commit()`, `mysql_user_rollback()`
-
-- **`socket_listen`**: 监听端口，接受客户端连接  
-- **`socket_connect`**: 处理客户端请求，解析JSON并调用对应方法
+#### 处理链路与核心组件
+- **IO 线程（Inet `TcpServer`）**：epoll 事件循环，按 `\n` 拆包、限流，再把请求投递给业务线程池
+- **业务线程池（`FixedThreadPool`）**：`TicketService::handleRequest` 按 `type` 分发处理
+- **`SessionManager`**：会话 token 的签发、滑动续期与过期清理
+- **`MysqlStmt`**：`mysql_stmt_*` 预处理语句的 RAII 封装，参数化绑定防注入
+- **`SqlConnPool`**：连接池借还 MySQL 连接；ORDER/CANCEL 在事务内 `SELECT ... FOR UPDATE` 防超卖
+- **`ScheduledThreadPool`**：周期清理过期 token、巡检票务状态、输出统计
 
 #### 数据库表结构
 
-```sql
--- 用户表
-create table users(
-   id int primary key not null unique auto_increment,
-   tel char(11) not null unique,
-   username varchar(64) not null,
-   password_hash varchar(255) not null,
-   salt varchar(64),
-   email varchar(255),
-   status tinyint not null default 1,
-   created_at datetime not null default current_timestamp,
-   updated_at datetime not null default current_timestamp on update current_timestamp,
-   last_login datetime
-);
+数据库结构以 `db/init.sql` 为准（见下方「数据库初始化」），脚本会创建以下表：
 
--- 票务表
-create table tickets(
-   id int primary key not null unique auto_increment,
-   title varchar(255) not null,
-   venue varchar(255),
-   total_seats int not null,
-   available_seats int not null,
-   event_date date not null,
-   status tinyint not null default 1,
-   created_at datetime not null default current_timestamp,
-   updated_at datetime not null default current_timestamp on update current_timestamp
-);
+| 表 | 说明 |
+|----|------|
+| `users` | 用户：`tel`(唯一)、`username`、`password_hash`、`salt`、`status`(1 正常 / 0 黑名单) 等 |
+| `tickets` | 票务：`title`、`venue`、`total_seats`、`available_seats`、`event_date`、`status`(1 在售 / 0 下架) |
+| `reservations` | 预定记录：`user_id`、`ticket_id`、`quantity`、`status`(枚举 PENDING/CONFIRMED/CANCELLED/EXPIRED) |
+| `admins` | 管理员账户 |
+| `reservation_audit` | 预定/取消的审计流水 |
 
--- 预定记录表
-create table reservations(
-   id bigint primary key not null unique auto_increment,
-   user_id int not null,
-   ticket_id int not null,
-   quantity int not null default 1,
-   status enum('PENDING','CONFIRMED','CANCELLED','EXPIRED') not null default 'CONFIRMED',
-   created_at datetime not null default current_timestamp,
-   updated_at datetime not null default current_timestamp on update current_timestamp
-);
-```
-#### 数据库表
+> 此处不再内联完整建表语句，避免与 `db/init.sql` 产生分歧；如需字段细节请查看该脚本。
 
 ##### 用户表
 
@@ -182,21 +164,15 @@ create table reservations(
    ```
 
 #### 注意事项
-1. 管理员系统直接操作数据库，需确保：
-   ```cpp
-   // admin.hpp中的数据库配置与实际环境一致
-   db_ip = "127.0.0.1";       // MySQL服务器IP
-   db_user = "root";          // 数据库账号
-   db_passwd = "zbk";         // 数据库密码
-   ```
+1. 管理端直连数据库，连接信息从 `config.json` 的 `db` 段读取（同样支持 `.env` / 环境变量覆盖），**不再硬编码密码**。详见 [Admin/README.md](Admin/README.md) 与 [Common/README.md](Common/README.md)。
 2. 票务状态字段控制逻辑：
    - 状态为0时用户端不可见
    - 可通过`UPDATE tickets SET status=0 WHERE id=1`手动下架票务
 
 #### 安全建议
 1. 生产环境应使用独立数据库账号并限制权限
-2. 建议增加操作日志记录功能
-3. 敏感操作（如黑名单管理）可增加二次确认
+2. 管理端 SQL 目前为字符串拼接执行（非预处理语句），仅供受信运营人员本地使用，勿暴露给不可信输入
+3. 敏感操作（如黑名单管理）可增加二次确认与操作日志
 
 ---
 
@@ -204,9 +180,10 @@ create table reservations(
 
 ### 依赖安装
 ```bash
-# Ubuntu
-sudo apt install libevent-dev libjsoncpp-dev libmysqlclient-dev build-essential cmake
+# Ubuntu / Debian
+sudo apt install libjsoncpp-dev libmysqlclient-dev build-essential cmake
 ```
+> 网络层为仓库内自带的 Inet（epoll）实现，无需再安装 libevent。
 
 ### 使用 CMake 构建（推荐）
 ```bash
@@ -220,6 +197,14 @@ cmake --build . --target all -j$(nproc)
 - `bin/ser`
 - `bin/client`
 - `bin/admin`
+
+### 测试
+仓库自带零依赖的单元测试（`tests/`），通过 CTest 注册（覆盖 Inet `Buffer`、`Timestamp`、`SessionManager`）：
+
+```bash
+cd build
+ctest --output-on-failure
+```
 
 ### 运行
 先启动服务器，再运行客户端或管理员：
@@ -262,6 +247,8 @@ use hyperticket;
 
 可选：用 `.env` 覆盖数据库连接项（优先级：进程环境变量 > `.env` > `config.json`）。`.env` 与 `config.json` 同目录，键名为 `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME`，模板见 `.env.example`。
 
+> ⚠️ 已知限制：`io_threads` 默认为 `1`。Inet 网络库在「多 IO 线程 + 连接在一次较长事务后立即关闭」的并发场景下存在连接析构竞态（`EventLoop::abortNotInLoopThread`），尚未修复。设为 `1` 时功能与并发均正常（业务仍由多 worker 线程并行处理）。修复多 IO 线程下的析构竞态属于网络层后续工作。
+
 ### 数据库依赖
 本项目不内置数据库，需要一个可访问的 MySQL 实例（在 `config.json` 的 `db` 段配置）。
 
@@ -280,120 +267,6 @@ mysql -u root -p < db/init.sql
 请务必手动运行该脚本，`ser` 进程不会自动替你创建或修改数据库表结构。
 应用端应使用事务（SELECT ... FOR UPDATE）来安全地扣减库存并插入 `reservations`，避免超卖。
 ---
-## Win环境配置
-
-### mysql.h
-找到mysql.h文件
-mysql.h文件通常位于MySQL的include目录中。例如：C:\Program Files\MySQL\MySQL Server 8.0\include。
-
-配置项目包含目录
-
-打开Visual Studio，创建或打开你的C/C++项目。
-在“解决方案资源管理器”中，右键点击项目名称，选择“属性”。
-在“属性页”中，展开“C/C++”节点，选择“常规”。
-在“附加包含目录”中，添加MySQL的include目录路径，例如：C:\Program Files\MySQL\MySQL Server 8.0\include。
-点击“应用”和“确定”保存设置。
-配置项目库目录
-
-在“属性页”中，展开“链接器”节点，选择“常规”。
-在“附加库目录”中，添加MySQL的lib目录路径，例如：C:\Program Files\MySQL\MySQL Server 8.0\lib。
-点击“应用”和“确定”保存设置。
-添加库文件
-
-在“属性页”中，展开“链接器”节点，选择“输入”。
-在“附加依赖项”中，添加mysqlclient.lib。
-点击“应用”和“确定”保存设置。
-
-### jsoncpp
-
-1. 下载和编译
-   
-   下载内容 ： jsoncpp 、 cmake 、 Visual Studio 2022 (IDE)
-	
-	jsoncpp : 编译的json库；
-	
-	cmake ： make编译工具，生成MakeFile，指定编译规则；
-	
-	IDE： 编译；
-	
-	1.1 下载 jsoncpp
-	Jsoncpp 是个跨平台的 C++ 开源库，提供的类为我们提供了很便捷的操作，而且使用的人也很多。在使用之前我们首先要从 github 仓库下载源码，地址如下： https://github.com/open-source-parsers/jsoncpp
-
-	1.2 cmake工具下载
-    	   
-	于 C++ 程序员都是基于 VS 进行项目开发，下载的源码我们一般不会直接使用，而且将其编译成相应的库文件（动态库或者静态库），这样不论是从使用或者部署的角度来说，操作起来都会更方便一些；
-    	   
-	但是 ，直接在github 下载的源码不能直接在 VS 中打开，我们需要现在 cmake工具将下载的项目构建成一个 VS 项目 ，随后使用 VS 编译出需要的 库文件；
-    	
-	CMake 下载地址：https://cmake.org/download/ 
-
-​	1.3 使用 cmake 生成 VS 项目
-
-​	![cmake](./assets/cmake.png)
-
-​	第一行选择git下载的jsoncpp文件夹，自动新建并选择输出文件夹jsoncpp_out，如图勾选后点击Configure进行配置，选择合适配置后点击Finish，完成后点击Generate生成，编译完成。
-
-​	使用 VS 找到`输出目录`中的 `.sln` 文件打开
-
-​	![jsoncpp](./assets/jsoncpp.png)
-
-​	右键选择jsoncpp_lib点击生成
-
-​	新建一个文件夹 jsoncpp，存放库文件和对应头文件,将从github下载源文件夹中 include 文件夹 拷贝到 jsoncpp文件夹中
-​	jsoncpp 中新建库文件夹lib 将刚才cmake输出文件夹中 `lib/Debug/jsoncpp.lib`和`bin/Debug/jsoncpp.dll` 放入该文件夹
-
-1.4 项目配置环境
-	1.4.1 包含目录
-	​![属性](./assets/属性.png)
-	​将你新建的jsoncpp文件夹下的include包含在其中
-	​1.4.2 加载的动态库
-	​![动态库](./assets/动态库.png)
-	​添加jsoncpp.lib文件
-
-### libevent
-
-本项目仓库中提供生成好的库libevent
-
-活动（Debug）模式下，选择项目属性，C/C++，常规，在附加包含目录中添加include文件夹
-
-项目属性，C/C++，代码生成，运行库选择MTd
-
-项目属性，C/C++，预处理器定义
-
-```
-_DEBUG
-WIN32
-_WINDOWS
-HAVE_CONFIG_H
-_CRT_SECURE_NO_WARNINGS
-_CRT_NONSTDC_NO_DEPRECATE
-TINYTEST_LOCAL
-_CONSOLE
-```
-
-项目属性，链接器，输入
-
-```
-$(libevent目录)lib\Debug\event.lib
-$(libevent目录)lib\Debug\event_extra.lib
-$(libevent目录)lib\Debug\event_core.lib
-ws2_32.lib
-iphlpapi.lib
-```
-
-Release模式下，运行库选择MT
-
-项目属性，链接器，输入
-
-```
-$(libevent目录)lib\Release\event.lib
-$(libevent目录)lib\Release\event_extra.lib
-$(libevent目录)lib\Release\event_core.lib
-ws2_32.lib
-iphlpapi.lib
-```
-
-
 ## 安全机制
 
 服务端采用以下措施防护常见攻击：
@@ -407,11 +280,11 @@ iphlpapi.lib
 ## 注意事项
 
 1. 确保MySQL服务已启动，且数据库账号密码与`config.json`一致
-2. 服务器默认监听`127.0.0.1:7000`，可通过`config.json`修改
+2. 服务器默认监听 `0.0.0.0:7000`（对外可达），可在 `config.json` 的 `server.ip`/`server.port` 修改；仅本机访问可改为 `127.0.0.1`
 
 ## 改进方向
 1. **安全性增强**  
-   - 密码加密存储（建议bcrypt算法，当前为哈希）
+   - 密码哈希升级：当前为 FNV-1a 非加密哈希且未加盐，生产环境应改用 bcrypt/argon2 等带盐的密码哈希
    - token 持久化到 Redis 以支持多实例部署
 
 2. **性能优化**  

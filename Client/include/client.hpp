@@ -36,15 +36,16 @@
 using namespace std;
 const int OFFSET = 3;
 
-enum OP_TYPE{
-    LOGIN = 1,//登陆
-    REGISTER, //注册
-    EXIT,     //退出
-    VIEW,     //查看
-    ORDER,    //预定
-    VIEW_MY,  //查看我的预定
-    CANCEL    //取消预定 
-};
+// 请求类型枚举与服务端共享，统一定义在 Common/Protocol.hpp，消除重复。
+#include "../../Common/include/Protocol.hpp"
+using hyperticket::LOGIN;
+using hyperticket::REGISTER;
+using hyperticket::EXIT;
+using hyperticket::VIEW;
+using hyperticket::ORDER;
+using hyperticket::VIEW_MY;
+using hyperticket::CANCEL;
+
 class socket_client{
 public:
     socket_client(){

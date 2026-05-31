@@ -3,6 +3,7 @@
 #include <sstream>
 #include <iomanip>
 #include <thread>
+#include <algorithm>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <unistd.h>
@@ -37,14 +38,22 @@ namespace hyperticket
     void MetricsManager::recordRequestDuration(const std::string &method, double seconds)
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        // 简化实现：只记录总数，不做 histogram
-        // 完整实现需要 prometheus-cpp 的 Histogram 支持
-        (void)method;
-        (void)seconds;
+        auto &hist = requestDurationByMethod_[method];
+        hist.samples.push_back(seconds);
+        hist.count++;
+        hist.sum += seconds;
+
+        // 限制样本数量，避免内存无限增长
+        if (hist.samples.size() > 10000)
+        {
+            hist.samples.erase(hist.samples.begin(), hist.samples.begin() + 5000);
+        }
     }
 
     void MetricsManager::recordOrder(const std::string &status)
     {
+        std::lock_guard<std::mutex> lock(mutex_);
+        ordersByStatus_[status]++;
         ordersTotal_++;
     }
 
@@ -90,6 +99,44 @@ namespace hyperticket
         (void)ratio;
     }
 
+    void MetricsManager::recordInventoryChange(int ticketId, int delta)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        inventoryByTicket_[ticketId] += delta;
+    }
+
+    void MetricsManager::setInventory(int ticketId, int count)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        inventoryByTicket_[ticketId] = count;
+    }
+
+    void MetricsManager::recordUserActivity(const std::string &action)
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        userActivityByAction_[action]++;
+    }
+
+    double MetricsManager::calculateQuantile(const std::vector<double> &sorted, double quantile)
+    {
+        if (sorted.empty())
+        {
+            return 0.0;
+        }
+
+        double index = quantile * (sorted.size() - 1);
+        size_t lower = static_cast<size_t>(index);
+        size_t upper = lower + 1;
+
+        if (upper >= sorted.size())
+        {
+            return sorted.back();
+        }
+
+        double weight = index - lower;
+        return sorted[lower] * (1.0 - weight) + sorted[upper] * weight;
+    }
+
     std::string MetricsManager::generateMetrics()
     {
         std::ostringstream oss;
@@ -116,6 +163,80 @@ namespace hyperticket
         oss << "\n# HELP hyperticket_orders_total Total number of orders\n";
         oss << "# TYPE hyperticket_orders_total counter\n";
         oss << "hyperticket_orders_total " << ordersTotal_.load() << "\n";
+
+        oss << "\n# HELP hyperticket_orders_by_status Total number of orders by status\n";
+        oss << "# TYPE hyperticket_orders_by_status counter\n";
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (const auto &pair : ordersByStatus_)
+            {
+                oss << "hyperticket_orders_by_status{status=\"" << pair.first << "\"} "
+                    << pair.second << "\n";
+            }
+        }
+
+        oss << "\n# HELP hyperticket_inventory Current inventory by ticket\n";
+        oss << "# TYPE hyperticket_inventory gauge\n";
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (const auto &pair : inventoryByTicket_)
+            {
+                oss << "hyperticket_inventory{ticket_id=\"" << pair.first << "\"} "
+                    << pair.second << "\n";
+            }
+        }
+
+        oss << "\n# HELP hyperticket_user_activity_total Total user activity by action\n";
+        oss << "# TYPE hyperticket_user_activity_total counter\n";
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (const auto &pair : userActivityByAction_)
+            {
+                oss << "hyperticket_user_activity_total{action=\"" << pair.first << "\"} "
+                    << pair.second << "\n";
+            }
+        }
+
+        // Histogram 指标：请求延迟
+        oss << "\n# HELP hyperticket_request_duration_seconds Request duration in seconds\n";
+        oss << "# TYPE hyperticket_request_duration_seconds histogram\n";
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (const auto &pair : requestDurationByMethod_)
+            {
+                const std::string &method = pair.first;
+                const HistogramData &hist = pair.second;
+
+                if (hist.samples.empty())
+                {
+                    continue;
+                }
+
+                // 计算分位数
+                std::vector<double> sorted = hist.samples;
+                std::sort(sorted.begin(), sorted.end());
+
+                double p50 = calculateQuantile(sorted, 0.50);
+                double p90 = calculateQuantile(sorted, 0.90);
+                double p95 = calculateQuantile(sorted, 0.95);
+                double p99 = calculateQuantile(sorted, 0.99);
+
+                // Prometheus histogram format (simplified)
+                // 实际应该输出 bucket，这里简化为 summary 格式
+                oss << "hyperticket_request_duration_seconds{method=\"" << method
+                    << "\",quantile=\"0.5\"} " << std::fixed << std::setprecision(6) << p50 << "\n";
+                oss << "hyperticket_request_duration_seconds{method=\"" << method
+                    << "\",quantile=\"0.9\"} " << p90 << "\n";
+                oss << "hyperticket_request_duration_seconds{method=\"" << method
+                    << "\",quantile=\"0.95\"} " << p95 << "\n";
+                oss << "hyperticket_request_duration_seconds{method=\"" << method
+                    << "\",quantile=\"0.99\"} " << p99 << "\n";
+                oss << "hyperticket_request_duration_seconds_sum{method=\"" << method
+                    << "\"} " << hist.sum << "\n";
+                oss << "hyperticket_request_duration_seconds_count{method=\"" << method
+                    << "\"} " << hist.count << "\n";
+            }
+        }
 
         oss << "\n# HELP hyperticket_sessions_active Number of active sessions\n";
         oss << "# TYPE hyperticket_sessions_active gauge\n";

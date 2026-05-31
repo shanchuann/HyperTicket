@@ -1,0 +1,71 @@
+# Prometheus 配置文件
+# 用于监控 HyperTicket 应用
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    cluster: 'hyperticket-prod'
+    environment: 'production'
+
+# 告警规则文件
+rule_files:
+  - 'alert_rules.yml'
+
+# Alertmanager 配置
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - 'localhost:9093'
+
+# 抓取配置
+scrape_configs:
+  # HyperTicket 应用指标
+  - job_name: 'hyperticket'
+    static_configs:
+      - targets:
+          - 'localhost:8080'
+        labels:
+          instance: 'hyperticket-1'
+          service: 'hyperticket'
+
+  # 如果有多个实例，添加更多 targets
+  # - job_name: 'hyperticket-cluster'
+  #   static_configs:
+  #     - targets:
+  #         - '192.168.1.10:8080'
+  #         - '192.168.1.11:8080'
+  #         - '192.168.1.12:8080'
+  #       labels:
+  #         service: 'hyperticket'
+
+  # Prometheus 自身监控
+  - job_name: 'prometheus'
+    static_configs:
+      - targets:
+          - 'localhost:9090'
+
+  # Node Exporter（系统指标）
+  - job_name: 'node'
+    static_configs:
+      - targets:
+          - 'localhost:9100'
+        labels:
+          instance: 'hyperticket-node-1'
+
+  # MySQL Exporter（数据库指标）
+  - job_name: 'mysql'
+    static_configs:
+      - targets:
+          - 'localhost:9104'
+        labels:
+          instance: 'hyperticket-mysql'
+
+  # Redis Exporter（Redis 指标，如果使用 Redis）
+  - job_name: 'redis'
+    static_configs:
+      - targets:
+          - 'localhost:9121'
+        labels:
+          instance: 'hyperticket-redis'

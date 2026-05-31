@@ -6,6 +6,7 @@
 #include <atomic>
 #include <map>
 #include <mutex>
+#include <vector>
 
 // 注意：此文件为 Prometheus Metrics 监控的接口定义
 // 实际实现需要集成 prometheus-cpp 客户端库
@@ -50,6 +51,15 @@ namespace hyperticket
 
         // 设置活跃会话数
         void setActiveSessions(int count);
+
+        // 记录库存变化：ticketId 为票务 ID，delta 为变化量（正数为增加，负数为减少）
+        void recordInventoryChange(int ticketId, int delta);
+
+        // 设置当前库存：ticketId 为票务 ID，count 为当前库存
+        void setInventory(int ticketId, int count);
+
+        // 记录用户活跃度：action 为用户操作（login/order/view等）
+        void recordUserActivity(const std::string &action);
 
         // ============================================================
         // 资源指标（Resource Metrics）
@@ -96,10 +106,23 @@ namespace hyperticket
         std::mutex mutex_;
         std::map<std::string, int64_t> requestsByMethod_;
         std::map<std::string, int64_t> errorsByType_;
+        std::map<std::string, int64_t> ordersByStatus_;
+        std::map<int, int> inventoryByTicket_;
+        std::map<std::string, int64_t> userActivityByAction_;
+
+        // Histogram 数据结构：简化实现，存储延迟样本
+        struct HistogramData
+        {
+            std::vector<double> samples;
+            int64_t count{0};
+            double sum{0.0};
+        };
+        std::map<std::string, HistogramData> requestDurationByMethod_;
 
         // 内部方法
         std::string generateMetrics();
         void runMetricsServer();
+        double calculateQuantile(const std::vector<double> &sorted, double quantile);
     };
 
     // ============================================================

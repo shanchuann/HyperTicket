@@ -1,0 +1,189 @@
+groups:
+  - name: hyperticket_alerts
+    interval: 30s
+    rules:
+      # 高错误率告警
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(hyperticket_requests_total{status="failed"}[5m]))
+          /
+          sum(rate(hyperticket_requests_total[5m]))
+          > 0.05
+        for: 2m
+        labels:
+          severity: warning
+          component: application
+        annotations:
+          summary: "High error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 5%)"
+
+      # 严重错误率告警
+      - alert: CriticalErrorRate
+        expr: |
+          sum(rate(hyperticket_requests_total{status="failed"}[5m]))
+          /
+          sum(rate(hyperticket_requests_total[5m]))
+          > 0.10
+        for: 1m
+        labels:
+          severity: critical
+          component: application
+        annotations:
+          summary: "Critical error rate detected"
+          description: "Error rate is {{ $value | humanizePercentage }} (threshold: 10%)"
+
+      # 高延迟告警
+      - alert: HighLatency
+        expr: hyperticket_request_duration_seconds{quantile="0.99"} > 1.0
+        for: 5m
+        labels:
+          severity: warning
+          component: application
+        annotations:
+          summary: "High request latency detected"
+          description: "P99 latency for {{ $labels.method }} is {{ $value }}s (threshold: 1s)"
+
+      # 严重延迟告警
+      - alert: CriticalLatency
+        expr: hyperticket_request_duration_seconds{quantile="0.99"} > 5.0
+        for: 2m
+        labels:
+          severity: critical
+          component: application
+        annotations:
+          summary: "Critical request latency detected"
+          description: "P99 latency for {{ $labels.method }} is {{ $value }}s (threshold: 5s)"
+
+      # 数据库连接池耗尽告警
+      - alert: DatabaseConnectionPoolExhausted
+        expr: |
+          hyperticket_db_connections_active
+          /
+          (hyperticket_db_connections_active + hyperticket_db_connections_idle)
+          > 0.9
+        for: 3m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Database connection pool nearly exhausted"
+          description: "Connection pool usage is {{ $value | humanizePercentage }} (threshold: 90%)"
+
+      # 数据库连接错误告警
+      - alert: DatabaseConnectionErrors
+        expr: rate(hyperticket_db_connection_errors_total[5m]) > 0.1
+        for: 2m
+        labels:
+          severity: warning
+          component: database
+        annotations:
+          summary: "Database connection errors detected"
+          description: "Database connection error rate is {{ $value }} errors/sec"
+
+      # 严重数据库连接错误告警
+      - alert: CriticalDatabaseConnectionErrors
+        expr: rate(hyperticket_db_connection_errors_total[5m]) > 1.0
+        for: 1m
+        labels:
+          severity: critical
+          component: database
+        annotations:
+          summary: "Critical database connection errors"
+          description: "Database connection error rate is {{ $value }} errors/sec (threshold: 1/sec)"
+
+      # 订单失败率告警
+      - alert: HighOrderFailureRate
+        expr: |
+          rate(hyperticket_orders_by_status{status="failed"}[5m])
+          /
+          rate(hyperticket_orders_total[5m])
+          > 0.10
+        for: 3m
+        labels:
+          severity: warning
+          component: business
+        annotations:
+          summary: "High order failure rate"
+          description: "Order failure rate is {{ $value | humanizePercentage }} (threshold: 10%)"
+
+      # 库存告警
+      - alert: LowInventory
+        expr: hyperticket_inventory < 10
+        for: 5m
+        labels:
+          severity: warning
+          component: business
+        annotations:
+          summary: "Low inventory detected"
+          description: "Ticket {{ $labels.ticket_id }} has only {{ $value }} items left"
+
+      # 库存耗尽告警
+      - alert: InventoryDepleted
+        expr: hyperticket_inventory == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: business
+        annotations:
+          summary: "Inventory depleted"
+          description: "Ticket {{ $labels.ticket_id }} is out of stock"
+
+      # 会话数异常告警
+      - alert: AbnormalSessionCount
+        expr: |
+          abs(
+            hyperticket_sessions_active
+            -
+            avg_over_time(hyperticket_sessions_active[1h])
+          )
+          /
+          avg_over_time(hyperticket_sessions_active[1h])
+          > 0.5
+        for: 10m
+        labels:
+          severity: warning
+          component: application
+        annotations:
+          summary: "Abnormal session count"
+          description: "Active sessions deviated {{ $value | humanizePercentage }} from 1h average"
+
+      # 服务不可用告警
+      - alert: ServiceDown
+        expr: up{job="hyperticket"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: infrastructure
+        annotations:
+          summary: "HyperTicket service is down"
+          description: "Instance {{ $labels.instance }} is unreachable"
+
+      # QPS 异常告警
+      - alert: AbnormalQPS
+        expr: |
+          abs(
+            rate(hyperticket_requests_total[5m])
+            -
+            avg_over_time(rate(hyperticket_requests_total[5m])[1h:5m])
+          )
+          /
+          avg_over_time(rate(hyperticket_requests_total[5m])[1h:5m])
+          > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          component: application
+        annotations:
+          summary: "Abnormal QPS detected"
+          description: "QPS deviated {{ $value | humanizePercentage }} from 1h average"
+
+      # 用户活跃度异常告警
+      - alert: LowUserActivity
+        expr: rate(hyperticket_user_activity_total[5m]) < 0.1
+        for: 15m
+        labels:
+          severity: info
+          component: business
+        annotations:
+          summary: "Low user activity"
+          description: "User activity rate is {{ $value }} actions/sec (threshold: 0.1/sec)"

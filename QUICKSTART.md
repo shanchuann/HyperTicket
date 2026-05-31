@@ -506,7 +506,6 @@ sudo sysctl -w net.ipv4.tcp_max_syn_backlog=4096
 
 ## 📚 更多文档
 
-- [企业级升级方案](ENTERPRISE_UPGRADE_PLAN.md)
 - [API 文档](docs/API.md)
 - [架构设计](docs/ARCHITECTURE.md)
 - [故障排查](docs/TROUBLESHOOTING.md)

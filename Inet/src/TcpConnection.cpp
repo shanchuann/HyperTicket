@@ -308,12 +308,19 @@ namespace shanchuan
     void TcpConnection::startRead()
     {
         LOG_TRACE<<"start: ";
-        loop_->runInLoop(std::bind(&TcpConnection::startReadInLoop, this));
+        // 使用 shared_from_this() 确保对象在回调执行时仍然存活
+        loop_->runInLoop(std::bind(&TcpConnection::startReadInLoop, shared_from_this()));
     }
     void TcpConnection::startReadInLoop()
     {
         LOG_TRACE<<"start";
         loop_->assertInLoopThread();
+        // 增加状态检查，避免在已断开的连接上操作
+        if (state_ != StateE::kConnected)
+        {
+            LOG_TRACE << "Connection not in kConnected state, skip startRead";
+            return;
+        }
         if (!reading_ || !channel_->isReading())
         {
             channel_->enableReading();
@@ -323,13 +330,20 @@ namespace shanchuan
     void TcpConnection::stopRead()
     {
         LOG_TRACE<<" stop ";
-        loop_->runInLoop(std::bind(&TcpConnection::stopReadInLoop, this));
+        // 使用 shared_from_this() 确保对象在回调执行时仍然存活
+        loop_->runInLoop(std::bind(&TcpConnection::stopReadInLoop, shared_from_this()));
     }
 
     void TcpConnection::stopReadInLoop()
     {
         LOG_TRACE<<"stop ";
         loop_->assertInLoopThread();
+        // 增加状态检查
+        if (state_ == StateE::kDisconnected)
+        {
+            LOG_TRACE << "Connection already disconnected, skip stopRead";
+            return;
+        }
         if (reading_ || channel_->isReading())
         {
             channel_->disableReading();

@@ -1,0 +1,44 @@
+# 构建时忽略的文件和目录
+
+# 构建产物
+build/
+bin/
+*.o
+*.a
+*.so
+
+# 配置文件（包含敏感信息）
+config.json
+.env
+
+# 日志文件
+logs/
+*.log
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# 文档
+*.md
+!README.md
+docs/
+
+# 测试
+tests/
+
+# Docker
+Dockerfile
+docker-compose.yml
+.dockerignore
+
+# 其他
+.DS_Store
+*.bak
+*.tmp

@@ -22,6 +22,15 @@ namespace shanchuan
             condition_.wait(lock, [this]() { return count_ > 0; });
             --count_;
         }
+        // 新增：非阻塞尝试获取
+        bool try_wait() {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (count_ > 0) {
+                --count_;
+                return true;
+            }
+            return false;
+        }
         void post() {
             std::lock_guard<std::mutex> lock(mutex_);
             ++count_;

@@ -1,0 +1,48 @@
+# Prometheus 配置文件
+
+global:
+  scrape_interval: 15s      # 每15秒抓取一次指标
+  evaluation_interval: 15s  # 每15秒评估一次告警规则
+  external_labels:
+    cluster: 'hyperticket'
+    environment: 'production'
+
+# 告警管理器配置（可选）
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets:
+#           - alertmanager:9093
+
+# 告警规则文件（可选）
+# rule_files:
+#   - "alerts/*.yml"
+
+# 抓取配置
+scrape_configs:
+  # Prometheus 自身监控
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # HyperTicket 应用监控
+  - job_name: 'hyperticket'
+    static_configs:
+      - targets: ['hyperticket:7000']
+    metrics_path: '/metrics'
+    scrape_interval: 10s
+
+  # MySQL 监控（需要 mysqld_exporter）
+  # - job_name: 'mysql'
+  #   static_configs:
+  #     - targets: ['mysql-exporter:9104']
+
+  # Redis 监控（需要 redis_exporter）
+  # - job_name: 'redis'
+  #   static_configs:
+  #     - targets: ['redis-exporter:9121']
+
+  # Node 监控（需要 node_exporter）
+  # - job_name: 'node'
+  #   static_configs:
+  #     - targets: ['node-exporter:9100']

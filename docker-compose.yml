@@ -1,0 +1,179 @@
+version: '3.8'
+
+# HyperTicket 完整部署栈
+# 包含：应用服务、MySQL、Redis、监控
+
+services:
+  # ============================================================
+  # 应用服务
+  # ============================================================
+  hyperticket:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: hyperticket-server
+    ports:
+      - "7000:7000"
+    environment:
+      # 数据库配置（通过环境变量覆盖）
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: hyperticket
+      DB_PASSWORD: ${DB_PASSWORD:-hyperticket_pass}
+      DB_NAME: hyperticket
+      # Redis配置
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      # 日志级别
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+    volumes:
+      # 挂载配置文件（可选，如果需要自定义配置）
+      - ./config.json:/app/config.json:ro
+      # 挂载日志目录（持久化日志）
+      - ./logs:/app/logs
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - hyperticket-net
+    # 资源限制（防止单个容器占用过多资源）
+    deploy:
+      resources:
+        limits:
+          cpus: '2.0'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 512M
+
+  # ============================================================
+  # MySQL 数据库
+  # ============================================================
+  mysql:
+    image: mysql:8.0
+    container_name: hyperticket-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_pass}
+      MYSQL_DATABASE: hyperticket
+      MYSQL_USER: hyperticket
+      MYSQL_PASSWORD: ${DB_PASSWORD:-hyperticket_pass}
+      # 性能优化配置
+      MYSQL_INNODB_BUFFER_POOL_SIZE: 1G
+      MYSQL_MAX_CONNECTIONS: 500
+    ports:
+      - "3306:3306"
+    volumes:
+      # 持久化数据
+      - mysql-data:/var/lib/mysql
+      # 初始化脚本
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      # 自定义配置
+      - ./docker/mysql/my.cnf:/etc/mysql/conf.d/custom.cnf:ro
+    command:
+      - --character-set-server=utf8mb4
+      - --collation-server=utf8mb4_unicode_ci
+      - --default-authentication-plugin=mysql_native_password
+      - --max-connections=500
+      - --innodb-buffer-pool-size=1G
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root_pass}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - hyperticket-net
+
+  # ============================================================
+  # Redis 缓存
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    container_name: hyperticket-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      # 持久化数据（AOF + RDB）
+      - redis-data:/data
+      # 自定义配置
+      - ./docker/redis/redis.conf:/usr/local/etc/redis/redis.conf:ro
+    command: redis-server /usr/local/etc/redis/redis.conf
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - hyperticket-net
+
+  # ============================================================
+  # Prometheus 监控（可选）
+  # ============================================================
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: hyperticket-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./docker/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=30d'
+    restart: unless-stopped
+    networks:
+      - hyperticket-net
+    profiles:
+      - monitoring
+
+  # ============================================================
+  # Grafana 可视化（可选）
+  # ============================================================
+  grafana:
+    image: grafana/grafana:latest
+    container_name: hyperticket-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_INSTALL_PLUGINS: redis-datasource
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./docker/grafana/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./docker/grafana/datasources:/etc/grafana/provisioning/datasources:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+    networks:
+      - hyperticket-net
+    profiles:
+      - monitoring
+
+# ============================================================
+# 网络配置
+# ============================================================
+networks:
+  hyperticket-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
+
+# ============================================================
+# 数据卷（持久化存储）
+# ============================================================
+volumes:
+  mysql-data:
+    driver: local
+  redis-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
+    driver: local

@@ -148,13 +148,8 @@ namespace hyperticket
             return false;
         }
 
-        // 检查过期
-        int64_t expireMs = value["expireMs"].asInt64();
-        if (expireMs <= nowMs)
-        {
-            return false;
-        }
-
+        // Redis TTL 已经处理过期，这里不需要再检查 expireMs
+        // 如果能读取到，说明还没过期
         telOut = value["tel"].asString();
         userIdOut = value["userId"].asInt64();
 

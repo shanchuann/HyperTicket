@@ -24,5 +24,16 @@
   "schedule": {
     "stats_interval_ms": 60000,
     "ticket_status_interval_ms": 3600000
+  },
+  "redis": {
+    "host": "127.0.0.1",
+    "port": 6379,
+    "pool_size": 10,
+    "session_ttl_minutes": 30,
+    "enabled": false
+  },
+  "metrics": {
+    "port": 8080,
+    "enabled": false
   }
 }

@@ -59,6 +59,8 @@ namespace shanchuan
           started_(0),
           nextConnId_(1)
     {
+        LOG_INFO << "TcpServer::TcpServer this=" << this << ", loop_=" << loop_
+                 << ", thread=" << std::this_thread::get_id();
         acceptor_->setNewConnectionCallback(
             std::bind(&TcpServer::newConnection, this, std::placeholders::_1, std::placeholders::_2));
     }
@@ -72,8 +74,8 @@ namespace shanchuan
         {
             TcpConnectionPtr conn = it->second;
             it->second.reset();
-            // conn->connectDestroyed();
-            conn->getLoop()->runInLoop(std::bind(&TcpConnection::connectDestroyed, conn));
+            // 使用 queueInLoop 确保异步执行，避免在析构时的竞态
+            conn->getLoop()->queueInLoop(std::bind(&TcpConnection::connectDestroyed, conn));
             conn.reset(); //
         }
     }
@@ -98,24 +100,39 @@ namespace shanchuan
     }
     void TcpServer::removeConnection(const TcpConnectionPtr &conn)
     {
-        LOG_TRACE<<"TcpServer::removeConnection";
-        loop_->runInLoop(
-            std::bind(&TcpServer::removeConnectionInLoop, this, conn));
+        LOG_INFO << "removeConnection: this=" << this << ", loop_=" << loop_
+                 << ", thread=" << std::this_thread::get_id();
+
+        // 关键修复：在这里获取 ioLoop，避免在回调中访问可能已析构的 conn
+        EventLoop *ioLoop = conn->getLoop();
+
+        // 使用 queueInLoop 而不是 runInLoop，确保总是异步执行
+        loop_->queueInLoop([this, conn, ioLoop]() {
+            this->removeConnectionInLoop(conn, ioLoop);
+        });
     }
-    void TcpServer::removeConnectionInLoop(const TcpConnectionPtr &conn)
+
+    void TcpServer::removeConnectionInLoop(const TcpConnectionPtr &conn, EventLoop *ioLoop)
     {
-        loop_->assertInLoopThread();
         LOG_INFO << "TcpServer::removeConnectionInLoop [" << name_
                  << "] - connection " << conn->name();
 
-        LOG_TRACE<<" connections_.erase(conn->name())";
-        size_t n = connections_.erase(conn->name());
-        (void)n;
-        assert(n == 1);
-        EventLoop *ioLoop = conn->getLoop();
-        //conn->connectDestroyed();
-        LOG_TRACE<<"ioLoop->queueInLoop";
-        ioLoop->queueInLoop(std::bind(&TcpConnection::connectDestroyed, conn));
-        
+        // 使用互斥锁保护 connections_ 映射
+        {
+            std::lock_guard<std::mutex> lock(connectionsMutex_);
+            size_t n = connections_.erase(conn->name());
+            (void)n;
+            assert(n == 1);
+        }
+
+        // 关键修复：TcpConnection 的析构必须在其所属的 IO 线程中进行
+        // 将 conn 的最后一个引用投递回 IO 线程
+        ioLoop->queueInLoop([conn]() {
+            // conn 在这个 lambda 中被捕获，当 lambda 析构时，conn 也会析构
+            // 此时在 IO 线程中，所以是安全的
+            LOG_TRACE << "TcpConnection " << conn->name() << " will destruct in IO thread";
+        });
+
+        LOG_TRACE << "Connection removed from map";
     }
 }

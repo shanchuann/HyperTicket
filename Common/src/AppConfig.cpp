@@ -146,6 +146,23 @@ namespace hyperticket
             cfg.schedule.ticket_status_interval_ms = getInt(schedule, "ticket_status_interval_ms", cfg.schedule.ticket_status_interval_ms);
         }
 
+        if (root.isMember("redis"))
+        {
+            const Json::Value &redis = root["redis"];
+            cfg.redis.host = getString(redis, "host", cfg.redis.host);
+            cfg.redis.port = getInt(redis, "port", cfg.redis.port);
+            cfg.redis.pool_size = getInt(redis, "pool_size", cfg.redis.pool_size);
+            cfg.redis.session_ttl_minutes = getInt(redis, "session_ttl_minutes", cfg.redis.session_ttl_minutes);
+            cfg.redis.enabled = root["redis"].isMember("enabled") ? root["redis"]["enabled"].asBool() : cfg.redis.enabled;
+        }
+
+        if (root.isMember("metrics"))
+        {
+            const Json::Value &metrics = root["metrics"];
+            cfg.metrics.port = getInt(metrics, "port", cfg.metrics.port);
+            cfg.metrics.enabled = root["metrics"].isMember("enabled") ? root["metrics"]["enabled"].asBool() : cfg.metrics.enabled;
+        }
+
         // Overlay DB settings from .env (precedence: process env > .env > config.json).
         applyDbEnv(cfg, path);
         return cfg;

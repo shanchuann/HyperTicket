@@ -5,6 +5,7 @@
 #include <memory>
 #include <map>
 #include <atomic>
+#include <mutex>
 #include "Callbacks.hpp"
 #include "TcpConnection.hpp"
 
@@ -35,15 +36,16 @@ namespace shanchuan
         WriteComplateCallback writeComplateCallback_;       // 写完整回调；
         ThreadInitCallback threadInitCallback_;             // 线程初始化回调
         std::atomic<int> started_;                          // 开始
-        int nextConnId_;                                    // 下一个连接ID,每次增加一个就加1 
+        int nextConnId_;                                    // 下一个连接ID,每次增加一个就加1
         ConnectionMap connections_;                         // 全相关连接对象列表
+        mutable std::mutex connectionsMutex_;               // 保护 connections_ 的互斥锁
 
         // 线程不安全, 只能在loop线程中调用
         void newConnection(int sockfd, const InetAddress &peerAddr);
         // 线程安全
         void removeConnection(const TcpConnectionPtr &conn);
-        // 线程不安全, 只能在loop线程中调用
-        void removeConnectionInLoop(const TcpConnectionPtr &conn);
+        // 现在是线程安全的（使用互斥锁）
+        void removeConnectionInLoop(const TcpConnectionPtr &conn, EventLoop *ioLoop);
     public:
         void setMessageCallback(const MessageCallback &cb) { messageCallback_ = cb; }
         void setConnectionCallback(const ConnectionCallback &cb) { connectionCallback_ = cb; }

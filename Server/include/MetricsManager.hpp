@@ -96,6 +96,10 @@ namespace hyperticket
         std::mutex mutex_;
         std::map<std::string, int64_t> requestsByMethod_;
         std::map<std::string, int64_t> errorsByType_;
+
+        // 内部方法
+        std::string generateMetrics();
+        void runMetricsServer();
     };
 
     // ============================================================

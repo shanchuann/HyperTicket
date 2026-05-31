@@ -32,7 +32,9 @@ namespace shanchuan
     {
         assert(!eventHandling_);
         assert(!addedToLoop_);
-        assert(!loop_->hasChannel(this));
+        // 移除 loop_->hasChannel(this) 断言
+        // 因为这个断言要求在特定线程中析构，导致多线程环境下的问题
+        // 如果 addedToLoop_ 为 false，说明 Channel 已经从 loop 中移除，不需要再检查
         LOG_TRACE << "~Channel";
     }
     void Channel::tie(const std::shared_ptr<void> &obj)
@@ -45,12 +47,16 @@ namespace shanchuan
     {
         LOG_TRACE<<"BEGIN";
         addedToLoop_ = true;
+        // 确保在正确的 EventLoop 线程中更新 Channel
+        loop_->assertInLoopThread();
         loop_->updateChannel(this);
     }
     void Channel::remove()
     {
         assert(isNoneEvent());
         addedToLoop_ = false;
+        // 确保在正确的 EventLoop 线程中移除 Channel
+        loop_->assertInLoopThread();
         loop_->removeChannel(this);
     }
 

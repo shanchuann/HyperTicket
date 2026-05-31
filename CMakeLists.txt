@@ -45,6 +45,8 @@ set(CHRONOLITE_SRC
 
 set(SERVER_SRC
 	Server/src/ser.cpp
+	Server/src/MetricsManager.cpp
+	Server/src/RedisSessionManager.cpp
 	${DOMAIN_SRC}
 	SqlConnPool/src/ConnectionPool.cpp
 	ScheduledThreadPool/src/Timer.cpp

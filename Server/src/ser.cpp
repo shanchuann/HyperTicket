@@ -4,6 +4,8 @@
 #include "../../Common/include/Protocol.hpp"
 #include "../../Common/include/Errors.hpp"
 #include "../include/SessionManager.hpp"
+#include "../include/RedisSessionManager.hpp"
+#include "../include/MetricsManager.hpp"
 #include "../include/RateLimiter.hpp"
 #include "../include/SchemaInitializer.hpp"
 #include "../../Domain/include/service/TicketService.hpp"
@@ -23,6 +25,8 @@
 #include <atomic>
 #include <csignal>
 #include <sstream>
+#include <memory>
+#include <chrono>
 
 using shanchuan::Buffer;
 using shanchuan::TcpConnectionPtr;
@@ -85,8 +89,32 @@ int main()
 
     shanchuan::FixedThreadPool workerPool(cfg.server.worker_threads);
     shanchuan::ScheduledThreadPool scheduler;
-    hyperticket::SessionManager sessions;
-    hyperticket::TicketService service(pool, &sessions);
+
+    // 根据配置选择 Session Manager
+    std::unique_ptr<hyperticket::ISessionManager> sessionMgr;
+    if (cfg.redis.enabled)
+    {
+        LOG_INFO << "Using Redis Session Manager";
+        sessionMgr = std::make_unique<hyperticket::RedisSessionManager>(
+            cfg.redis.host,
+            cfg.redis.port,
+            cfg.redis.session_ttl_minutes * 60 * 1000);
+    }
+    else
+    {
+        LOG_INFO << "Using in-memory Session Manager";
+        sessionMgr = std::make_unique<hyperticket::SessionManager>();
+    }
+
+    hyperticket::TicketService service(pool, sessionMgr.get());
+
+    // 可选：启动 Metrics Manager
+    std::unique_ptr<hyperticket::MetricsManager> metrics;
+    if (cfg.metrics.enabled)
+    {
+        LOG_INFO << "Metrics enabled on port " << cfg.metrics.port;
+        metrics = std::make_unique<hyperticket::MetricsManager>(cfg.metrics.port);
+    }
 
     shanchuan::EventLoop loop;
     shanchuan::InetAddress listenAddr(cfg.server.ip, static_cast<uint16_t>(cfg.server.port));
@@ -124,7 +152,7 @@ int main()
     });
 
     // 消息回调：按 '\n' 拆包 -> 限流 -> 解析 JSON -> 投递业务线程池处理。
-    server.setMessageCallback([&workerPool, &service](const TcpConnectionPtr &conn, Buffer *buf, shanchuan::Timestamp) {
+    server.setMessageCallback([&workerPool, &service, &metrics](const TcpConnectionPtr &conn, Buffer *buf, shanchuan::Timestamp) {
         while (true)
         {
             const char *eol = buf->findEOL();
@@ -140,6 +168,7 @@ int main()
                 if (rl && !rl->allow())
                 {
                     sendJson(conn, makeError(hyperticket::err::kRateLimited));
+                    if (metrics) metrics->recordError("rate_limited");
                     continue;
                 }
             }
@@ -152,18 +181,65 @@ int main()
             if (!Json::parseFromStream(builder, iss, &req, &errs))
             {
                 sendJson(conn, makeError("JSON_PARSE"));
+                if (metrics) metrics->recordError("json_parse");
                 continue;
             }
 
-            workerPool.add_task([conn, req, &service]() {
-                sendJson(conn, service.handle(req));
+            workerPool.add_task([conn, req, &service, &metrics]() {
+                auto start = std::chrono::steady_clock::now();
+                Json::Value resp = service.handle(req);
+                auto end = std::chrono::steady_clock::now();
+
+                // 记录 metrics
+                if (metrics)
+                {
+                    double duration = std::chrono::duration<double>(end - start).count();
+                    std::string method = "unknown";
+                    if (req.isMember("type"))
+                    {
+                        int type = req["type"].asInt();
+                        switch (type)
+                        {
+                        case 1: method = "login"; break;
+                        case 2: method = "register"; break;
+                        case 3: method = "exit"; break;
+                        case 4: method = "view"; break;
+                        case 5: method = "order"; break;
+                        case 6: method = "view_my"; break;
+                        case 7: method = "cancel"; break;
+                        default: method = "unknown"; break;
+                        }
+                    }
+
+                    std::string status = (resp.isMember("code") && resp["code"].asInt() == 0) ? "success" : "failed";
+                    metrics->recordRequest(method, status);
+                    metrics->recordRequestDuration(method, duration);
+
+                    if (method == "order")
+                    {
+                        metrics->recordOrder(status);
+                    }
+                }
+
+                sendJson(conn, resp);
             });
         }
     });
 
     scheduler.addRunEvery(cfg.schedule.stats_interval_ms, [&service]() { service.logStats(); });
     scheduler.addRunEvery(cfg.schedule.ticket_status_interval_ms, [&service]() { service.refreshTicketStatus(); });
-    scheduler.addRunEvery(60000, [&sessions]() { sessions.purgeExpired(hyperticket::nowMs()); });
+    scheduler.addRunEvery(60000, [&sessionMgr]() { sessionMgr->purgeExpired(hyperticket::nowMs()); });
+
+    // 定期更新 metrics 资源指标
+    if (metrics)
+    {
+        scheduler.addRunEvery(5000, [&metrics, &pool, &sessionMgr]() {
+            metrics->setDbConnectionsActive(pool->GetActiveConn());
+            metrics->setDbConnectionsIdle(pool->GetFreeConn());
+            // 注意：SessionManager 没有 size() 方法，这里简化处理
+            // 如需实现，需要在 ISessionManager 接口添加 size() 方法
+        });
+    }
 
     server.start();
     LOG_INFO << "server started at " << cfg.server.ip << ":" << cfg.server.port;

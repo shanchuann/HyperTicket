@@ -274,6 +274,7 @@ namespace shanchuan
         if (state_ == StateE::kConnected || state_ == StateE::kDisconnecting)
         {
             setState(StateE::kDisconnecting);
+            // 使用 shared_from_this() 延长生命周期，确保回调执行时对象仍存活
             loop_->queueInLoop(std::bind(&TcpConnection::forceCloseInLoop, shared_from_this()));
         }
     }
@@ -376,16 +377,22 @@ namespace shanchuan
     void TcpConnection::connectDestroyed() // 终止连接
     {
         LOG_TRACE<<"destroyed: ";
+        // 必须在连接所属的 loop 线程中执行
         loop_->assertInLoopThread();
         LOG_TRACE << "state_: " << stateToString();
+
+        // 如果状态仍是 kConnected，说明是从析构函数调用的，需要清理
         if (StateE::kConnected == state_)
         {
             setState(StateE::kDisconnected);
             channel_->disableAll();
             LOG_INFO << "终止连接";
             connectionCallback_(shared_from_this());
+            channel_->remove();
         }
-        channel_->remove();
+        // 如果状态已经是 kDisconnected，说明 handleClose 已经清理过了
+        // 不需要再次清理，避免重复调用 channel_->remove()
+
         LOG_TRACE<<"END: "<<" state_: "<<stateToString();
     }
 
@@ -489,13 +496,26 @@ namespace shanchuan
 
         setState(StateE::kDisconnected);
         LOG_TRACE << "fd " << socket_->fd() << " index_ " << channel_->index();
+
+        // 先禁用所有事件，这会调用 update()，必须在 IO 线程中
         channel_->disableAll();
+
+        // 使用 shared_from_this() 延长生命周期
         TcpConnectionPtr guardThis(shared_from_this());
         LOG_TRACE << "fd " << socket_->fd() << " index: " << channel_->indextoString();
         LOG_TRACE << "fd " << socket_->fd() << " event : " << channel_->events();
+
+        // 调用用户的连接回调
         connectionCallback_(guardThis);
-        // 必须是最后一行
+
+        // closeCallback_ 会调用 TcpServer::removeConnection
+        // 通知 TcpServer 从连接映射中移除此连接
         closeCallback_(guardThis);
+
+        // 关键修复：直接在 IO 线程中清理 Channel，避免跨线程调用
+        // 这样可以避免主线程调用已析构的 EventLoop
+        channel_->remove();
+        LOG_TRACE << "Channel removed in IO thread";
     }
     void TcpConnection::handleError()
     {

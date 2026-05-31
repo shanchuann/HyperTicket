@@ -39,12 +39,29 @@ namespace hyperticket
         int ticket_status_interval_ms = 3600000;
     };
 
+    struct RedisConfig
+    {
+        std::string host = "127.0.0.1";
+        int port = 6379;
+        int pool_size = 10;
+        int session_ttl_minutes = 30;
+        bool enabled = false;  // 默认禁用，使用内存 SessionManager
+    };
+
+    struct MetricsConfig
+    {
+        int port = 8080;
+        bool enabled = false;  // 默认禁用
+    };
+
     struct AppConfig
     {
         DbConfig db;
         ServerConfig server;
         LogConfig log;
         ScheduleConfig schedule;
+        RedisConfig redis;
+        MetricsConfig metrics;
 
         static AppConfig Load(const std::string &path, std::string *error);
     };

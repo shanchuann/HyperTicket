@@ -1,6 +1,6 @@
 // SessionManager 单元测试：create→resolve、错误 token、过期、续期、remove、purge。
 #include "test_util.hpp"
-#include "../Server/include/SessionManager.hpp"
+#include "../backend/Server/include/SessionManager.hpp"
 
 using hyperticket::SessionManager;
 

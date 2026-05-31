@@ -1,7 +1,7 @@
 // Redis Session Manager 集成测试
 // 测试 Redis Session 的创建、解析、过期、续期等功能
 
-#include "../Server/include/RedisSessionManager.hpp"
+#include "../backend/Server/include/RedisSessionManager.hpp"
 #include <iostream>
 #include <cassert>
 #include <thread>

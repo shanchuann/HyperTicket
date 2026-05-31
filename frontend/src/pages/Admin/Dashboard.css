@@ -1,0 +1,279 @@
+/* Admin Dashboard Styles */
+
+.admin-dashboard {
+  padding: var(--space-4);
+}
+
+.dashboard-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  gap: var(--space-4);
+  color: var(--color-text-secondary);
+}
+
+.loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.dashboard-title {
+  font-size: var(--text-h1);
+  font-weight: var(--weight-semibold);
+  margin-bottom: var(--space-6);
+  color: var(--color-text-primary);
+}
+
+/* Stats Grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--space-5);
+  margin-bottom: var(--space-8);
+}
+
+.stat-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  padding: var(--space-5);
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-4);
+}
+
+.stat-icon {
+  width: 48px;
+  height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.stat-content {
+  flex: 1;
+}
+
+.stat-title {
+  font-size: var(--text-body);
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-2);
+}
+
+.stat-value {
+  font-size: var(--text-h2);
+  font-weight: var(--weight-bold);
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-2);
+}
+
+.stat-trend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-body-sm);
+}
+
+.trend-up {
+  color: var(--color-success);
+  font-weight: var(--weight-medium);
+}
+
+.trend-down {
+  color: var(--color-error);
+  font-weight: var(--weight-medium);
+}
+
+.trend-label {
+  color: var(--color-text-tertiary);
+}
+
+/* Dashboard Grid */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: var(--space-5);
+}
+
+/* Dashboard Section */
+.dashboard-section {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  padding: var(--space-5);
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: var(--space-5);
+}
+
+.section-title {
+  font-size: var(--text-h3);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-primary);
+}
+
+.alert-icon {
+  color: var(--color-error);
+}
+
+/* Orders Table */
+.orders-table-wrapper {
+  overflow-x: auto;
+}
+
+.orders-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.orders-table th,
+.orders-table td {
+  text-align: left;
+  padding: var(--space-3) var(--space-4);
+  font-size: var(--text-body-sm);
+}
+
+.orders-table th {
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-secondary);
+  border-bottom: 1px solid var(--color-divider);
+  white-space: nowrap;
+}
+
+.orders-table tbody tr {
+  border-bottom: 1px solid var(--color-divider);
+  transition: background-color var(--duration-fast) var(--ease-out-quart);
+}
+
+.orders-table tbody tr:last-child {
+  border-bottom: none;
+}
+
+.orders-table tbody tr:hover {
+  background: var(--color-bg);
+}
+
+.orders-table td {
+  color: var(--color-text-primary);
+  white-space: nowrap;
+}
+
+.order-id {
+  font-family: var(--font-mono);
+  color: var(--color-text-secondary);
+}
+
+.order-amount {
+  font-weight: var(--weight-semibold);
+  color: var(--color-error);
+}
+
+.order-status {
+  display: inline-flex;
+  padding: var(--space-1) var(--space-3);
+  font-size: var(--text-body-sm);
+  font-weight: var(--weight-medium);
+}
+
+.order-status.status-confirmed {
+  background: oklch(0.77 0.12 65 / 0.1);
+  color: var(--color-success);
+}
+
+.order-status.status-pending {
+  background: oklch(0.90 0.12 95 / 0.1);
+  color: var(--color-warning);
+}
+
+.order-status.status-cancelled {
+  background: oklch(0.62 0.15 35 / 0.1);
+  color: var(--color-error);
+}
+
+.order-time {
+  color: var(--color-text-tertiary);
+}
+
+/* Stock List */
+.stock-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.stock-item {
+  padding: var(--space-4);
+  background: var(--color-bg);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.stock-info {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.stock-title {
+  font-weight: var(--weight-medium);
+  color: var(--color-text-primary);
+}
+
+.stock-count {
+  font-size: var(--text-body-sm);
+  color: var(--color-text-secondary);
+}
+
+.stock-bar {
+  height: 6px;
+  background: var(--color-border);
+  overflow: hidden;
+}
+
+.stock-fill {
+  height: 100%;
+  background: var(--color-error);
+  transition: width var(--duration-normal) var(--ease-out-quart);
+}
+
+.stock-percent {
+  font-size: var(--text-body-sm);
+  font-weight: var(--weight-semibold);
+  color: var(--color-error);
+  text-align: right;
+}
+
+/* Responsive */
+@media (max-width: 1023px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 767px) {
+  .admin-dashboard {
+    padding: var(--space-3);
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .orders-table th,
+  .orders-table td {
+    padding: var(--space-2) var(--space-3);
+  }
+}

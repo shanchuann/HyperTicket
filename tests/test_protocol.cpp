@@ -1,6 +1,6 @@
 // Protocol 契约层测试：makeOk/makeError 结构、字段常量、toJsonLine 往返、枚举值。
 #include "test_util.hpp"
-#include "../Common/include/Protocol.hpp"
+#include "../backend/Common/include/Protocol.hpp"
 
 #include <jsoncpp/json/json.h>
 #include <algorithm>

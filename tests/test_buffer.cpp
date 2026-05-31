@@ -1,6 +1,6 @@
 // Buffer 单元测试：覆盖读写指针、retrieve/append、网络字节序、查找 EOL、扩容等纯逻辑。
 #include "test_util.hpp"
-#include "../Inet/include/Buffer.hpp"
+#include "../backend/Inet/include/Buffer.hpp"
 #include <sys/uio.h>
 
 // Buffer::readFd 引用 Sockets::readv（定义在 SocketsOps.cpp，会拖入 Logger 整条依赖链）。

@@ -1,0 +1,205 @@
+/* Admin Layout Styles */
+
+.admin-layout {
+  display: flex;
+  min-height: 100vh;
+  background: var(--color-bg);
+}
+
+/* Sidebar */
+.admin-sidebar {
+  width: 240px;
+  background: var(--color-surface);
+  border-right: 1px solid var(--color-divider);
+  display: flex;
+  flex-direction: column;
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  z-index: var(--z-sticky);
+  transition: width var(--duration-normal) var(--ease-out-quart);
+}
+
+.admin-sidebar.collapsed {
+  width: 64px;
+}
+
+.admin-sidebar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-4) var(--space-4) var(--space-5);
+  border-bottom: 1px solid var(--color-divider);
+}
+
+.admin-logo {
+  font-family: var(--font-display);
+  font-size: var(--text-h4);
+  font-weight: var(--weight-bold);
+  color: var(--color-primary);
+  text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.admin-sidebar-toggle {
+  background: transparent;
+  border: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  padding: var(--space-2);
+  font-size: 14px;
+  transition: color var(--duration-fast) var(--ease-out-quart);
+}
+
+.admin-sidebar-toggle:hover {
+  color: var(--color-text-primary);
+}
+
+.admin-nav {
+  flex: 1;
+  padding: var(--space-4) var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  overflow-y: auto;
+}
+
+.admin-nav-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-3);
+  color: var(--color-text-secondary);
+  text-decoration: none;
+  font-size: var(--text-body);
+  font-weight: var(--weight-medium);
+  transition: all var(--duration-fast) var(--ease-out-quart);
+  white-space: nowrap;
+  overflow: hidden;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+
+.admin-nav-item:hover {
+  color: var(--color-text-primary);
+  background: var(--color-bg);
+}
+
+.admin-nav-item.active {
+  color: var(--color-primary);
+  background: oklch(0.34 0.06 210 / 0.08);
+}
+
+.admin-sidebar-footer {
+  padding: var(--space-4) var(--space-3);
+  border-top: 1px solid var(--color-divider);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+/* Mobile Sidebar */
+.admin-mobile-sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 260px;
+  background: var(--color-surface);
+  z-index: var(--z-modal);
+  transform: translateX(-100%);
+  transition: transform var(--duration-normal) var(--ease-out-quart);
+  display: flex;
+  flex-direction: column;
+}
+
+.admin-mobile-sidebar.open {
+  transform: translateX(0);
+}
+
+.admin-mobile-overlay {
+  position: fixed;
+  inset: 0;
+  background: oklch(0 0 0 / 0.5);
+  z-index: var(--z-overlay);
+}
+
+.admin-sidebar-close {
+  background: transparent;
+  border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  padding: var(--space-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Main Content */
+.admin-main {
+  flex: 1;
+  margin-left: 240px;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  transition: margin-left var(--duration-normal) var(--ease-out-quart);
+}
+
+.admin-sidebar.collapsed + .admin-main {
+  margin-left: 64px;
+}
+
+/* Mobile Header */
+.admin-mobile-header {
+  display: none;
+  align-items: center;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-divider);
+  gap: var(--space-3);
+}
+
+.admin-mobile-menu-btn {
+  background: transparent;
+  border: none;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  padding: var(--space-1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.admin-mobile-title {
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-primary);
+}
+
+.admin-mobile-spacer {
+  width: 40px;
+}
+
+.admin-content {
+  flex: 1;
+  padding: var(--space-6);
+  overflow-y: auto;
+}
+
+/* Responsive */
+@media (max-width: 1023px) {
+  .admin-sidebar {
+    display: none;
+  }
+
+  .admin-main {
+    margin-left: 0;
+  }
+
+  .admin-mobile-header {
+    display: flex;
+  }
+}

@@ -1,0 +1,178 @@
+/* HyperTicket Design Tokens */
+
+/* Google Fonts - 中文字体 */
+@import url('https://fonts.googleapis.com/css2?family=Ma+Shan+Zheng&family=ZCOOL+XiaoWei&display=swap');
+
+:root {
+  /* Brand Colors */
+  --color-primary: oklch(0.34 0.06 210);
+  --color-primary-hover: oklch(0.40 0.07 210);
+  --color-primary-active: oklch(0.28 0.06 210);
+
+  --color-accent: oklch(0.57 0.07 185);
+  --color-accent-hover: oklch(0.62 0.08 185);
+
+  /* Semantic Colors */
+  --color-success: oklch(0.77 0.12 65);
+  --color-warning: oklch(0.90 0.12 95);
+  --color-error: oklch(0.62 0.15 35);
+  --color-info: oklch(0.57 0.07 185);
+
+  /* Light Mode - Neutrals */
+  --color-bg: oklch(0.98 0.005 210);
+  --color-surface: oklch(1.0 0 0);
+  --color-surface-elevated: oklch(0.99 0.003 210);
+  --color-border: oklch(0.88 0.01 210);
+  --color-divider: oklch(0.92 0.008 210);
+
+  --color-text-primary: oklch(0.25 0.02 210);
+  --color-text-secondary: oklch(0.50 0.02 210);
+  --color-text-tertiary: oklch(0.65 0.015 210);
+  --color-text-disabled: oklch(0.75 0.01 210);
+
+  /* Dark Mode - Neutrals */
+  --color-bg-dark: oklch(0.15 0.01 210);
+  --color-surface-dark: oklch(0.20 0.015 210);
+  --color-surface-elevated-dark: oklch(0.25 0.02 210);
+  --color-border-dark: oklch(0.50 0.02 210);
+  --color-divider-dark: oklch(0.35 0.015 210);
+
+  --color-text-primary-dark: oklch(0.98 0 0);
+  --color-text-secondary-dark: oklch(0.85 0.01 210);
+  --color-text-tertiary-dark: oklch(0.65 0.015 210);
+  --color-text-disabled-dark: oklch(0.45 0.01 210);
+
+  /* Typography */
+  --font-display: "ZCOOL XiaoWei", "Ma Shan Zheng", serif;
+  --font-body: "PingFang SC", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  --font-mono: "SF Mono", "Consolas", "Liberation Mono", monospace;
+
+  --text-display-xl: clamp(3.5rem, 5vw, 5.5rem);
+  --text-display-lg: clamp(2.75rem, 4vw, 4rem);
+  --text-display-md: clamp(2.25rem, 3vw, 3rem);
+
+  --text-h1: clamp(2rem, 2.5vw, 2.5rem);
+  --text-h2: clamp(1.5rem, 2vw, 1.875rem);
+  --text-h3: 1.25rem;
+  --text-h4: 1.125rem;
+
+  --text-body-lg: 1.125rem;
+  --text-body: 1rem;
+  --text-body-sm: 0.875rem;
+  --text-caption: 0.75rem;
+
+  --leading-tight: 1.3;
+  --leading-normal: 1.6;
+  --leading-relaxed: 1.8;
+
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  --tracking-tight: -0.02em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.02em;
+
+  /* Spacing */
+  --space-1: 0.25rem;
+  --space-2: 0.5rem;
+  --space-3: 0.75rem;
+  --space-4: 1rem;
+  --space-5: 1.5rem;
+  --space-6: 2rem;
+  --space-8: 3rem;
+  --space-10: 4rem;
+  --space-12: 6rem;
+  --space-16: 8rem;
+
+  /* Borders & Shadows */
+  --border-width: 1px;
+  --shadow-sm: 0 1px 2px oklch(0 0 0 / 0.05);
+  --shadow-md: 0 4px 8px oklch(0 0 0 / 0.08);
+  --shadow-lg: 0 8px 16px oklch(0 0 0 / 0.12);
+
+  --radius-none: 0;
+  --radius-sm: 2px;
+  --radius-md: 4px;
+  --radius-lg: 8px;
+
+  /* Motion */
+  --duration-instant: 100ms;
+  --duration-fast: 200ms;
+  --duration-normal: 300ms;
+  --duration-slow: 500ms;
+  --duration-slower: 800ms;
+
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in-out-quart: cubic-bezier(0.76, 0, 0.24, 1);
+
+  /* Z-Index */
+  --z-base: 0;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-overlay: 300;
+  --z-modal: 400;
+  --z-popover: 500;
+  --z-toast: 600;
+  --z-tooltip: 700;
+
+  /* Breakpoints (for JS) */
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
+}
+
+/* Dark Theme */
+[data-theme="dark"] {
+  --color-bg: var(--color-bg-dark);
+  --color-surface: var(--color-surface-dark);
+  --color-surface-elevated: var(--color-surface-elevated-dark);
+  --color-border: var(--color-border-dark);
+  --color-divider: var(--color-divider-dark);
+  --color-text-primary: var(--color-text-primary-dark);
+  --color-text-secondary: var(--color-text-secondary-dark);
+  --color-text-tertiary: var(--color-text-tertiary-dark);
+  --color-text-disabled: var(--color-text-disabled-dark);
+}
+
+/* Base Styles */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: var(--font-body);
+  font-size: var(--text-body);
+  line-height: var(--leading-normal);
+  color: var(--color-text-primary);
+  background: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Focus States */
+:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 2px;
+}
+
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
+/* Reduced Motion */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

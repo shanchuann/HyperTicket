@@ -54,13 +54,13 @@
 ### 3. 自研基础组件
 | 模块 | 作用 | 状态 |
 |------|------|------|
-| [Inet](Inet/README.md) | 基于 epoll 的 Reactor 网络库 | 稳定 |
-| [ChronoLite](ChronoLite/README.md) | 异步日志（双缓冲 + 后台线程） | 稳定 |
-| [FixedThreadPool](FixedThreadPool/README.md) | 固定大小业务工作线程池 | 稳定 |
-| [ScheduledThreadPool](ScheduledThreadPool/README.md) | 定时任务（会话清理、票务巡检、统计） | 稳定 |
-| [SqlConnPool](SqlConnPool/README.md) | MySQL 连接池（带健康检查） | 稳定 |
-| [Common](Common/README.md) | 统一配置加载 `AppConfig` | 稳定 |
-| [Domain](Domain/) | 领域层（Service + Repository） | 稳定 |
+| [Inet](backend/Inet/README.md) | 基于 epoll 的 Reactor 网络库 | 稳定 |
+| [ChronoLite](backend/ChronoLite/README.md) | 异步日志（双缓冲 + 后台线程） | 稳定 |
+| [FixedThreadPool](backend/FixedThreadPool/README.md) | 固定大小业务工作线程池 | 稳定 |
+| [ScheduledThreadPool](backend/ScheduledThreadPool/README.md) | 定时任务（会话清理、票务巡检、统计） | 稳定 |
+| [SqlConnPool](backend/SqlConnPool/README.md) | MySQL 连接池（带健康检查） | 稳定 |
+| [Common](backend/Common/README.md) | 统一配置加载 `AppConfig` | 稳定 |
+| [Domain](backend/Domain/) | 领域层（Service + Repository） | 稳定 |
 
 ### 4. 企业级功能（可选）
 | 功能 | 说明 | 状态 |
@@ -70,7 +70,19 @@
 | 健康检查 | `/health` 端点（数据库、磁盘、内存） | 可用 |
 | Docker 部署 | 容器化 + docker-compose | 可用 |
 
-### 5. 数据库系统
+### 5. 前端技术栈
+| 技术 | 用途 | 版本 |
+|------|------|------|
+| **React 18** | UI 框架 | ^18.x |
+| **TypeScript** | 类型安全 | ^5.x |
+| **Vite** | 构建工具 | ^5.x |
+| **React Router** | 客户端路由 | ^6.x |
+| **Framer Motion** | 动画库 | ^11.x |
+| **Lucide React** | 图标库 | ^0.x |
+
+前端目录: [`frontend/`](frontend/)
+
+### 6. 数据库系统
 - **MySQL 8.0+**：关系型数据库存储
 - **Redis 7+**（可选）：Session 持久化
 
@@ -94,16 +106,16 @@
 ## 模块说明
 
 ### Server 服务器
-> 详细说明见 [Server/README.md](Server/README.md)。
+> 详细说明见 [backend/Server/README.md](backend/Server/README.md)。
 
 #### 功能
-1. 使用自研 [Inet](Inet/README.md) Reactor 库（epoll）实现高并发网络通信
+1. 使用自研 [backend/Inet](backend/Inet/README.md) Reactor 库（epoll）实现高并发网络通信
 2. 通过 MySQL 管理用户数据 (`users`)、票务数据 (`tickets`)、预定记录 (`reservations`)，并写审计表 (`reservation_audit`)
 3. 处理客户端请求，返回 JSON 格式响应
 
 #### 处理链路与核心组件
-- **IO 线程（Inet `TcpServer`）**：epoll 事件循环，按 `\n` 拆包、限流，再把请求投递给业务线程池
-- **业务线程池（`FixedThreadPool`）**：`TicketService::handleRequest` 按 `type` 分发处理
+- **IO 线程（backend/Inet `TcpServer`）**：epoll 事件循环，按 `\n` 拆包、限流，再把请求投递给业务线程池
+- **业务线程池（`backend/FixedThreadPool`）**：`TicketService::handleRequest` 按 `type` 分发处理
 - **`SessionManager`**：会话 token 的签发、滑动续期与过期清理
 - **`MysqlStmt`**：`mysql_stmt_*` 预处理语句的 RAII 封装，参数化绑定防注入
 - **`SqlConnPool`**：连接池借还 MySQL 连接；ORDER/CANCEL 在事务内 `SELECT ... FOR UPDATE` 防超卖
@@ -172,7 +184,7 @@
    ```
 
 #### 注意事项
-1. 管理端直连数据库，连接信息从 `config.json` 的 `db` 段读取（同样支持 `.env` / 环境变量覆盖），**不再硬编码密码**。详见 [Admin/README.md](Admin/README.md) 与 [Common/README.md](Common/README.md)。
+1. 管理端直连数据库，连接信息从 `config.json` 的 `db` 段读取（同样支持 `.env` / 环境变量覆盖），**不再硬编码密码**。详见 [backend/Admin/README.md](backend/Admin/README.md) 与 [backend/Common/README.md](backend/Common/README.md)。
 2. 票务状态字段控制逻辑：
    - 状态为0时用户端不可见
    - 可通过`UPDATE tickets SET status=0 WHERE id=1`手动下架票务
@@ -181,6 +193,36 @@
 1. 生产环境应使用独立数据库账号并限制权限
 2. 管理端已使用预处理语句防注入，但仍建议仅供受信运营人员使用
 3. 敏感操作（如黑名单管理）可增加二次确认与操作日志
+
+### Web 前端界面
+> 详细说明见 [frontend/README.md](frontend/README.md)
+
+#### 功能模块
+1. **营销落地页** (`/`)
+   - 品牌展示与价值主张
+   - 核心功能介绍（演出/赛事/景区/电影）
+   - 技术优势展示
+   - 使用流程引导
+
+2. **认证页面** (`/auth/*`)
+   - 登录页面：手机号 + 密码，表单验证
+   - 注册页面：用户信息注册，密码强度检测
+   - 主题切换（日间/夜间模式）
+
+3. **客户界面** (`/customer/*`)
+   - 票务浏览：搜索、分类筛选、库存可视化
+   - 我的订单：订单列表、状态管理、支付/取消操作
+
+4. **管理后台** (`/admin/*`)
+   - 数据仪表盘：统计数据、最近订单、库存预警
+   - 票务管理：票务列表、增删改查
+
+#### 设计特点
+- **高端、优雅、无缝** 的品牌调性
+- 完整的设计系统（颜色、字体、间距、动画）
+- 响应式布局，支持桌面/平板/移动设备
+- 支持日夜间主题切换
+- 中文优先的排版设计
 
 ---
 
@@ -356,7 +398,7 @@ mysql -u root -p < db/init.sql
 
 **注意**：当前为占位实现（文件模拟），生产环境需要：
 1. 安装 `libhiredis-dev`
-2. 替换 `Server/src/RedisSessionManager.cpp` 中的实现
+2. 替换 `backend/Server/src/RedisSessionManager.cpp` 中的实现
 3. 参考文件中的完整示例代码
 
 详见：[docs/REDIS_SESSION_GUIDE.md](docs/REDIS_SESSION_GUIDE.md)
@@ -489,10 +531,10 @@ livenessProbe:
 - [docs/IMPLEMENTATION_COMPLETE.md](docs/IMPLEMENTATION_COMPLETE.md) - 残留工作完成报告
 
 ### 模块文档
-- [Server/README.md](Server/README.md) - 服务端说明
-- [Client/README.md](Client/README.md) - 客户端说明
-- [Admin/README.md](Admin/README.md) - 管理端说明
-- [Inet/README.md](Inet/README.md) - 网络库说明
-- [ChronoLite/README.md](ChronoLite/README.md) - 日志库说明
-- [SqlConnPool/README.md](SqlConnPool/README.md) - 连接池说明
-- [其他模块 README](.)
+- [backend/Server/README.md](backend/Server/README.md) - 服务端说明
+- [backend/Client/README.md](backend/Client/README.md) - 客户端说明
+- [backend/Admin/README.md](backend/Admin/README.md) - 管理端说明
+- [backend/Inet/README.md](backend/Inet/README.md) - 网络库说明
+- [backend/ChronoLite/README.md](backend/ChronoLite/README.md) - 日志库说明
+- [backend/SqlConnPool/README.md](backend/SqlConnPool/README.md) - 连接池说明
+- [其他模块 README](backend/)

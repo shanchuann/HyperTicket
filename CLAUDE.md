@@ -63,38 +63,38 @@ nohup ./bin/ser > logs/ser.log 2>&1 &
 ### Layered Structure
 
 ```
-Client/Admin (presentation)
+backend/Client/Admin (presentation)
     ↓
-Server (ser.cpp) - request routing, session management
+backend/Server (ser.cpp) - request routing, session management
     ↓
-Domain (service layer) - business logic, transaction orchestration
+backend/Domain (service layer) - business logic, transaction orchestration
     ↓ TicketService, Repository pattern
-SqlConnPool - connection pooling
+backend/SqlConnPool - connection pooling
     ↓
 MySQL - users, tickets, reservations, reservation_audit
 ```
 
 ### Custom Infrastructure Components
 
-All located in repository root as separate modules:
+All backend modules located in `backend/` directory:
 
-- **Inet/**: Reactor network library (epoll-based, master-slave Reactor pattern, one loop per thread)
-- **ChronoLite/**: Async logging (double-buffering + background thread)
-- **FixedThreadPool/**: Business worker thread pool
-- **ScheduledThreadPool/**: Periodic tasks (session cleanup, ticket inspection, stats)
-- **SqlConnPool/**: MySQL connection pool with health checks
-- **Common/**: Unified config loading (AppConfig reads config.json + .env + env vars)
+- **backend/Inet/**: Reactor network library (epoll-based, master-slave Reactor pattern, one loop per thread)
+- **backend/ChronoLite/**: Async logging (double-buffering + background thread)
+- **backend/FixedThreadPool/**: Business worker thread pool
+- **backend/ScheduledThreadPool/**: Periodic tasks (session cleanup, ticket inspection, stats)
+- **backend/SqlConnPool/**: MySQL connection pool with health checks
+- **backend/Common/**: Unified config loading (AppConfig reads config.json + .env + env vars)
 
 ### Request Flow
 
-1. **IO Thread** (Inet TcpServer): epoll event loop → parse JSON lines (delimited by `\n`) → rate limiting
-2. **Worker Thread** (FixedThreadPool): `TicketService::handleRequest()` dispatches by `type` field
-3. **Database**: Connection borrowed from SqlConnPool, uses prepared statements (`MysqlStmt`)
+1. **IO Thread** (backend/Inet TcpServer): epoll event loop → parse JSON lines (delimited by `\n`) → rate limiting
+2. **Worker Thread** (backend/FixedThreadPool): `TicketService::handleRequest()` dispatches by `type` field
+3. **Database**: Connection borrowed from backend/SqlConnPool, uses prepared statements (`MysqlStmt`)
 4. **Response**: JSON written back through TcpConnection
 
 ### Key Design Patterns
 
-- **Domain-Driven Design**: Domain/ contains service layer (TicketService) and repository interfaces (header-only)
+- **Domain-Driven Design**: backend/Domain/ contains service layer (TicketService) and repository interfaces (header-only)
 - **RAII Wrappers**: `MysqlStmt` wraps `mysql_stmt_*` for prepared statements
 - **Session Management**: `SessionManager` maintains in-memory token → user mapping with sliding expiration (30 min TTL)
 - **Transaction Safety**: ORDER/CANCEL use `SELECT ... FOR UPDATE` within transactions to prevent overselling
@@ -149,11 +149,11 @@ Both `config.json` and `.env` are gitignored. Use `config.example.json` and `.en
 
 ### Header Organization
 
-- **Domain/include/repository/**: Repository interfaces (header-only)
-- **Domain/include/service/**: Service layer (TicketService implementation in src/)
-- **Domain/include/MysqlStmt.hpp**: Prepared statement RAII wrapper
-- **Server/include/SessionManager.hpp**: Token-based session management
-- **Server/include/RateLimiter.hpp**: Token bucket rate limiter per connection
+- **backend/Domain/include/repository/**: Repository interfaces (header-only)
+- **backend/Domain/include/service/**: Service layer (TicketService implementation in src/)
+- **backend/Domain/include/MysqlStmt.hpp**: Prepared statement RAII wrapper
+- **backend/Server/include/SessionManager.hpp**: Token-based session management
+- **backend/Server/include/RateLimiter.hpp**: Token bucket rate limiter per connection
 
 ### Security Patterns
 
@@ -167,9 +167,9 @@ When adding new endpoints that require authentication:
 ## Testing
 
 Tests are in `tests/` and registered with CTest:
-- `test_buffer.cpp`: Inet Buffer class
-- `test_timestamp.cpp`: ChronoLite Timestamp
-- `test_session.cpp`: SessionManager token lifecycle
+- `test_buffer.cpp`: backend/Inet Buffer class
+- `test_timestamp.cpp`: backend/ChronoLite Timestamp
+- `test_session.cpp`: backend/Server SessionManager token lifecycle
 - `test_protocol.cpp`: JSON protocol parsing
 
 Tests have zero external dependencies (no database, no network).
@@ -203,23 +203,23 @@ docker-compose logs -f hyperticket
 
 ### Adding a New Request Type
 
-1. Add enum to `Server/include/ser.hpp` `OP_TYPE`
-2. Implement handler in `Domain/src/service/TicketService.cpp`
+1. Add enum to `backend/Server/include/ser.hpp` `OP_TYPE`
+2. Implement handler in `backend/Domain/src/service/TicketService.cpp`
 3. Update protocol documentation in `README.md`
 4. Add test case in `tests/test_protocol.cpp`
 
 ### Modifying Database Schema
 
 1. Update `db/init.sql` (single source of truth)
-2. Update corresponding Repository interface in `Domain/include/repository/`
+2. Update corresponding Repository interface in `backend/Domain/include/repository/`
 3. Update `MysqlStmt` bindings in service implementation
 4. Document migration steps in commit message
 
 ### Adding a New Module
 
-Follow the existing pattern:
+Follow the existing pattern (for backend modules, place under `backend/`):
 ```
-ModuleName/
+backend/ModuleName/
   include/  # Public headers
   src/      # Implementation
   README.md # Module documentation

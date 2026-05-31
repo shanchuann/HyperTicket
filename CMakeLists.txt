@@ -32,113 +32,113 @@ else()
 endif()
 
 set(COMMON_SRC
-	Common/src/AppConfig.cpp
+	backend/Common/src/AppConfig.cpp
 )
 
 # 领域层：服务层(含事务编排)。Repository/Service 头文件为 header-only，
 # 仅 TicketService 的实现需编译，ser 与 admin 共享。
 set(DOMAIN_SRC
-	Domain/src/service/TicketService.cpp
-	Domain/src/service/TicketServiceTxn.cpp
-	Domain/src/ServiceUtil.cpp
+	backend/Domain/src/service/TicketService.cpp
+	backend/Domain/src/service/TicketServiceTxn.cpp
+	backend/Domain/src/ServiceUtil.cpp
 )
 
 set(CHRONOLITE_SRC
-	ChronoLite/src/AppendFile.cpp
-	ChronoLite/src/AsynLogging.cpp
-	ChronoLite/src/CountDownLatch.cpp
-	ChronoLite/src/LogFile.cpp
-	ChronoLite/src/Logger.cpp
-	ChronoLite/src/LogMessage.cpp
-	ChronoLite/src/Timestamp.cpp
+	backend/ChronoLite/src/AppendFile.cpp
+	backend/ChronoLite/src/AsynLogging.cpp
+	backend/ChronoLite/src/CountDownLatch.cpp
+	backend/ChronoLite/src/LogFile.cpp
+	backend/ChronoLite/src/Logger.cpp
+	backend/ChronoLite/src/LogMessage.cpp
+	backend/ChronoLite/src/Timestamp.cpp
 )
 
 set(SERVER_SRC
-	Server/src/ser.cpp
-	Server/src/MetricsManager.cpp
-	Server/src/RedisSessionManager.cpp
-	Server/src/RedisConnPool.cpp
+	backend/Server/src/ser.cpp
+	backend/Server/src/MetricsManager.cpp
+	backend/Server/src/RedisSessionManager.cpp
+	backend/Server/src/RedisConnPool.cpp
 	${DOMAIN_SRC}
-	SqlConnPool/src/ConnectionPool.cpp
-	ScheduledThreadPool/src/Timer.cpp
-	ScheduledThreadPool/src/TimerQueue.cpp
-	Inet/src/Acceptor.cpp
-	Inet/src/Buffer.cpp
-	Inet/src/Channel.cpp
-	Inet/src/Connector.cpp
-	Inet/src/EPollPoller.cpp
-	Inet/src/EventLoop.cpp
-	Inet/src/EventLoopThread.cpp
-	Inet/src/EventLoopThreadPool.cpp
-	Inet/src/InetAddress.cpp
-	Inet/src/Poller.cpp
-	Inet/src/Socket.cpp
-	Inet/src/SocketsOps.cpp
-	Inet/src/TcpClient.cpp
-	Inet/src/TcpConnection.cpp
-	Inet/src/TcpServer.cpp
-	Inet/src/Timer.cpp
-	Inet/src/TimerQueue.cpp
+	backend/SqlConnPool/src/ConnectionPool.cpp
+	backend/ScheduledThreadPool/src/Timer.cpp
+	backend/ScheduledThreadPool/src/TimerQueue.cpp
+	backend/Inet/src/Acceptor.cpp
+	backend/Inet/src/Buffer.cpp
+	backend/Inet/src/Channel.cpp
+	backend/Inet/src/Connector.cpp
+	backend/Inet/src/EPollPoller.cpp
+	backend/Inet/src/EventLoop.cpp
+	backend/Inet/src/EventLoopThread.cpp
+	backend/Inet/src/EventLoopThreadPool.cpp
+	backend/Inet/src/InetAddress.cpp
+	backend/Inet/src/Poller.cpp
+	backend/Inet/src/Socket.cpp
+	backend/Inet/src/SocketsOps.cpp
+	backend/Inet/src/TcpClient.cpp
+	backend/Inet/src/TcpConnection.cpp
+	backend/Inet/src/TcpServer.cpp
+	backend/Inet/src/Timer.cpp
+	backend/Inet/src/TimerQueue.cpp
 	${CHRONOLITE_SRC}
 )
 
 add_executable(ser ${SERVER_SRC} ${COMMON_SRC})
 target_include_directories(ser PRIVATE
-	Common/include
-	Domain/include
-	Server/include
-	SqlConnPool/include
-	Inet/include
-	ScheduledThreadPool/include
-	ChronoLite/include
-	FixedThreadPool/include
+	backend/Common/include
+	backend/Domain/include
+	backend/Server/include
+	backend/SqlConnPool/include
+	backend/Inet/include
+	backend/ScheduledThreadPool/include
+	backend/ChronoLite/include
+	backend/FixedThreadPool/include
 )
 target_link_libraries(ser PRIVATE ${JSONCPP_LIB} ${MYSQLCLIENT_LIB} crypt Threads::Threads)
 if(HIREDIS_LIB)
 	target_link_libraries(ser PRIVATE ${HIREDIS_LIB})
 endif()
 
-add_executable(client Client/src/client.cpp ${COMMON_SRC} ${CHRONOLITE_SRC})
-target_include_directories(client PRIVATE Common/include Client/include ChronoLite/include)
+add_executable(client backend/Client/src/client.cpp ${COMMON_SRC} ${CHRONOLITE_SRC})
+target_include_directories(client PRIVATE backend/Common/include backend/Client/include backend/ChronoLite/include)
 target_link_libraries(client PRIVATE ${JSONCPP_LIB} Threads::Threads)
 
-add_executable(admin Admin/src/admin.cpp ${COMMON_SRC} Domain/src/ServiceUtil.cpp ${CHRONOLITE_SRC})
-target_include_directories(admin PRIVATE Common/include Domain/include Admin/include ChronoLite/include)
+add_executable(admin backend/Admin/src/admin.cpp ${COMMON_SRC} backend/Domain/src/ServiceUtil.cpp ${CHRONOLITE_SRC})
+target_include_directories(admin PRIVATE backend/Common/include backend/Domain/include backend/Admin/include backend/ChronoLite/include)
 target_link_libraries(admin PRIVATE ${MYSQLCLIENT_LIB} ${JSONCPP_LIB} crypt Threads::Threads)
 
 # ---- Unit tests (zero external deps, registered with CTest) ----
 enable_testing()
 
-add_executable(test_buffer tests/test_buffer.cpp Inet/src/Buffer.cpp)
-target_include_directories(test_buffer PRIVATE Inet/include)
+add_executable(test_buffer tests/test_buffer.cpp backend/Inet/src/Buffer.cpp)
+target_include_directories(test_buffer PRIVATE backend/Inet/include)
 target_link_libraries(test_buffer PRIVATE Threads::Threads)
 add_test(NAME test_buffer COMMAND $<TARGET_FILE:test_buffer>)
 
-add_executable(test_timestamp tests/test_timestamp.cpp ChronoLite/src/Timestamp.cpp)
-target_include_directories(test_timestamp PRIVATE ChronoLite/include)
+add_executable(test_timestamp tests/test_timestamp.cpp backend/ChronoLite/src/Timestamp.cpp)
+target_include_directories(test_timestamp PRIVATE backend/ChronoLite/include)
 target_link_libraries(test_timestamp PRIVATE Threads::Threads)
 add_test(NAME test_timestamp COMMAND $<TARGET_FILE:test_timestamp>)
 
 add_executable(test_session tests/test_session.cpp)
-target_include_directories(test_session PRIVATE Server/include)
+target_include_directories(test_session PRIVATE backend/Server/include)
 target_link_libraries(test_session PRIVATE Threads::Threads)
 add_test(NAME test_session COMMAND $<TARGET_FILE:test_session>)
 
 add_executable(test_protocol tests/test_protocol.cpp)
-target_include_directories(test_protocol PRIVATE Common/include)
+target_include_directories(test_protocol PRIVATE backend/Common/include)
 target_link_libraries(test_protocol PRIVATE ${JSONCPP_LIB} Threads::Threads)
 add_test(NAME test_protocol COMMAND $<TARGET_FILE:test_protocol>)
 
 add_executable(test_redis_session
 	tests/test_redis_session.cpp
-	Server/src/RedisSessionManager.cpp
-	Server/src/RedisConnPool.cpp
+	backend/Server/src/RedisSessionManager.cpp
+	backend/Server/src/RedisConnPool.cpp
 	${CHRONOLITE_SRC}
 )
 target_include_directories(test_redis_session PRIVATE
-	Server/include
-	Domain/include
-	ChronoLite/include
+	backend/Server/include
+	backend/Domain/include
+	backend/ChronoLite/include
 )
 target_link_libraries(test_redis_session PRIVATE ${JSONCPP_LIB} Threads::Threads)
 if(HIREDIS_LIB)

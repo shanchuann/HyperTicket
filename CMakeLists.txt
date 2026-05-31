@@ -21,6 +21,16 @@ if(NOT MYSQLCLIENT_LIB)
 	set(MYSQLCLIENT_LIB mysqlclient)
 endif()
 
+# Redis support (optional)
+find_library(HIREDIS_LIB hiredis)
+if(HIREDIS_LIB)
+	message(STATUS "Found hiredis: ${HIREDIS_LIB}")
+	add_definitions(-DUSE_HIREDIS)
+else()
+	message(WARNING "hiredis not found, Redis Session will use placeholder implementation")
+	message(WARNING "Install with: sudo apt install libhiredis-dev")
+endif()
+
 set(COMMON_SRC
 	Common/src/AppConfig.cpp
 )
@@ -47,6 +57,7 @@ set(SERVER_SRC
 	Server/src/ser.cpp
 	Server/src/MetricsManager.cpp
 	Server/src/RedisSessionManager.cpp
+	Server/src/RedisConnPool.cpp
 	${DOMAIN_SRC}
 	SqlConnPool/src/ConnectionPool.cpp
 	ScheduledThreadPool/src/Timer.cpp
@@ -83,6 +94,9 @@ target_include_directories(ser PRIVATE
 	FixedThreadPool/include
 )
 target_link_libraries(ser PRIVATE ${JSONCPP_LIB} ${MYSQLCLIENT_LIB} crypt Threads::Threads)
+if(HIREDIS_LIB)
+	target_link_libraries(ser PRIVATE ${HIREDIS_LIB})
+endif()
 
 add_executable(client Client/src/client.cpp ${COMMON_SRC} ${CHRONOLITE_SRC})
 target_include_directories(client PRIVATE Common/include Client/include ChronoLite/include)
@@ -114,3 +128,20 @@ add_executable(test_protocol tests/test_protocol.cpp)
 target_include_directories(test_protocol PRIVATE Common/include)
 target_link_libraries(test_protocol PRIVATE ${JSONCPP_LIB} Threads::Threads)
 add_test(NAME test_protocol COMMAND $<TARGET_FILE:test_protocol>)
+
+add_executable(test_redis_session
+	tests/test_redis_session.cpp
+	Server/src/RedisSessionManager.cpp
+	Server/src/RedisConnPool.cpp
+	${CHRONOLITE_SRC}
+)
+target_include_directories(test_redis_session PRIVATE
+	Server/include
+	Domain/include
+	ChronoLite/include
+)
+target_link_libraries(test_redis_session PRIVATE ${JSONCPP_LIB} Threads::Threads)
+if(HIREDIS_LIB)
+	target_link_libraries(test_redis_session PRIVATE ${HIREDIS_LIB})
+endif()
+add_test(NAME test_redis_session COMMAND $<TARGET_FILE:test_redis_session>)

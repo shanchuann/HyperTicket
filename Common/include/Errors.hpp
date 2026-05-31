@@ -20,6 +20,8 @@ namespace hyperticket
 
         constexpr const char *kUserNotFound = "USER_NOT_FOUND";
         constexpr const char *kPasswdError = "PASSWD_ERROR";
+        constexpr const char *kInvalidCredentials = "INVALID_CREDENTIALS"; // 统一：用户不存在或密码错误
+        constexpr const char *kWeakPassword = "WEAK_PASSWORD";
         constexpr const char *kBlacklisted = "BLACKLISTED";
 
         constexpr const char *kTicketNotFound = "TICKET_NOT_FOUND";

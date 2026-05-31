@@ -28,7 +28,7 @@ namespace shanchuan
               expiration_(when),
               interval_(interval),
               repeat_(interval > 0.0),
-              sequence_(s_sumCreated_.fetch_and(1))
+              sequence_(s_sumCreated_.fetch_add(1))
         {
         }
         ~Timer() {}

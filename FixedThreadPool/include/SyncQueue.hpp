@@ -6,13 +6,17 @@
 #ifndef SYNCQUEUE_HPP
 #define SYNCQUEUE_HPP
 
-#define OK 0
-#define QUEUE_FULL 1
-#define QUEUE_STOPPED 2
 static const int MaxTaskCount = 100;
 
 namespace shanchuan
 {
+    enum class QueueResult
+    {
+        Ok = 0,
+        Full,      // 队列已满，put 失败
+        Stopped,   // 队列已停止
+        Timeout,   // 等待超时
+    };
     template <typename T>
     class SyncQueue
     {
@@ -35,34 +39,15 @@ namespace shanchuan
             return empty;
         }
         template <typename F>
-        int add(F &&task)
+        QueueResult add(F &&task)
         {
             std::unique_lock<std::mutex> lock(_mutex);
-            /*
-            // 生产者线程在添加任务时，如果队列已满，则等待直到队列不满或线程池正在停止
-            while(!_stop_flag && is_full()){
-                _cv_not_full.wait(lock);
-            }
-            // lambda
-            _cv_not_full.wait(lock, [this]() { return !is_full() || _stop_flag; });
-            */
-
-            /*
-            // 生产者线程在添加任务时，如果队列已满，则等待直到队列不满或线程池正在停止，等待时设置超时时间，避免死锁
-            while(!_stop_flag && is_full()){
-                if(std::cv_status::timeout == _cv_not_full.wait_for(lock, std::chrono::seconds(_wait_timeout))){
-                    return QUEUE_FULL;
-                }
-            }
-            */
-
-            // 生产者线程在添加任务时，如果队列已满，则等待直到队列不满或线程池正在停止，等待时设置超时时间，避免死锁
             bool tag = _cv_not_full.wait_for(lock, std::chrono::seconds(_wait_timeout), [this]() { return !is_full() || _stop_flag; });
-            if (!tag) return QUEUE_FULL;
-            if (_stop_flag) return QUEUE_STOPPED;
+            if (!tag) return QueueResult::Full;
+            if (_stop_flag) return QueueResult::Stopped;
             _task_queue.emplace_back(std::forward<F>(task));
             _cv_not_empty.notify_all();
-            return OK;
+            return QueueResult::Ok;
         }
 
     public:
@@ -70,10 +55,10 @@ namespace shanchuan
         ~SyncQueue() {
             if (!_stop_flag) force_stop();
         }
-        int put(const T &task) {
+        QueueResult put(const T &task) {
             return add(task);
         }
-        int put(T &&task) {
+        QueueResult put(T &&task) {
             return add(std::forward<T>(task));
         }
 
@@ -102,25 +87,25 @@ namespace shanchuan
         }
         */
         
-        int take(T&task) {
+        QueueResult take(T&task) {
             std::unique_lock<std::mutex> lock(_mutex);
             bool tag = _cv_not_empty.wait_for(lock, std::chrono::seconds(_wait_timeout), [this]() { return !is_empty() || _stop_flag; });
-            if (!tag) return QUEUE_FULL; // 等待超时，返回队列满的状态
-            if(_stop_flag) return QUEUE_STOPPED;
+            if (!tag) return QueueResult::Timeout;
+            if(_stop_flag) return QueueResult::Stopped;
             task = std::move(_task_queue.front());
             _task_queue.pop_front();
             _cv_not_full.notify_all();
-            return OK;
+            return QueueResult::Ok;
         }
-        int take(std::deque<T> &task_list) {
+        QueueResult take(std::deque<T> &task_list) {
             std::unique_lock<std::mutex> lock(_mutex);
             bool tag = _cv_not_empty.wait_for(lock, std::chrono::seconds(_wait_timeout), [this]() { return !is_empty() || _stop_flag; });
-            if (!tag) return QUEUE_FULL; // 等待超时，返回队列满的状态
-            if(_stop_flag) return QUEUE_STOPPED;
+            if (!tag) return QueueResult::Timeout;
+            if(_stop_flag) return QueueResult::Stopped;
             task_list = std::move(_task_queue);
             _task_queue.clear();
             _cv_not_full.notify_all();
-            return OK;
+            return QueueResult::Ok;
         }
         void force_stop() {
             {
@@ -157,6 +142,7 @@ namespace shanchuan
             return _task_queue.size();
         }
         size_t count() const {
+            std::lock_guard<std::mutex> lock(_mutex);
             return _task_queue.size();
         }
     };

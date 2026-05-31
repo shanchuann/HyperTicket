@@ -1,5 +1,6 @@
 #include "client.hpp"
 #include "../../Common/include/AppConfig.hpp"
+#include "../../ChronoLite/include/AsynLogging.hpp"
 
 #include <sstream>
 
@@ -17,9 +18,11 @@ bool socket_client::Connect_server(){
     int res = connect(sockfd, (struct sockaddr*)&saddr, sizeof(saddr));
     if(res == -1){
         cout << "connect failed" << endl;
+        LOG_ERROR << "connect to " << ips << ":" << port << " failed";
         return false;
     }
     cout << "connect success" << endl;
+    LOG_INFO << "connected to " << ips << ":" << port;
     return true;
 }
 
@@ -33,24 +36,26 @@ bool socket_client::send_json(const Json::Value &val){
 }
 
 bool socket_client::recv_json(Json::Value &out){
-    std::string data;
-    char buff[512] = {0};
+    char buff[4096] = {0};
     while (true){
-        int n = recv(sockfd, buff, sizeof(buff) - 1, 0);
-        if (n <= 0){
-            return false;
-        }
-        data.append(buff, n);
-        size_t pos = data.find('\n');
+        // 先检查缓冲区中是否已有完整消息
+        size_t pos = recvBuf_.find('\n');
         if (pos != std::string::npos){
-            std::string line = data.substr(0, pos);
+            std::string line = recvBuf_.substr(0, pos);
+            recvBuf_ = recvBuf_.substr(pos + 1);
             Json::CharReaderBuilder builder;
             builder["collectComments"] = false;
             std::string errs;
             std::istringstream iss(line);
             return Json::parseFromStream(builder, iss, &out, &errs);
         }
-        if (data.size() > 1024 * 256){
+        int n = recv(sockfd, buff, sizeof(buff) - 1, 0);
+        if (n <= 0){
+            return false;
+        }
+        recvBuf_.append(buff, n);
+        if (recvBuf_.size() > 1024 * 256){
+            recvBuf_.clear();
             return false;
         }
     }
@@ -132,9 +137,11 @@ LOGINPWD:
         usertel = tel;
         token = another["token"].asString();  // 保存会话令牌
         cout<<"登陆成功"<<endl;
+        LOG_INFO << "login ok tel=" << tel;
     }
     else{
         cout<<"登陆失败"<<endl;
+        LOG_WARN << "login failed tel=" << tel;
         return;
     }
 }
@@ -217,10 +224,14 @@ REGCONPWD:
     string res = another["status"].asString();
     if(res == "OK"){
         dl_flg = true;
+        username = another["username"].asString();
+        token = another["token"].asString();
         cout<<"注册成功"<<endl;
+        LOG_INFO << "register ok tel=" << usertel << " name=" << username;
     }
     else{
         cout<<"注册失败"<<endl;
+        LOG_WARN << "register failed tel=" << usertel;
         return;
     }
 }
@@ -251,7 +262,7 @@ void socket_client::view(){
         return;
     }
     cout<<"+-------------------------------------------------------+"<<endl;
-    cout<<"|序号\t|名称\t\t|总票数\t|已预定\t|时间\t\t|"<<endl;
+    cout<<"|序号\t|名称\t\t|总票数\t|余票\t|时间\t\t|"<<endl;
     cout<<"+-------------------------------------------------------+"<<endl;
     for(int i = 0; i < num; i++){
         cout<<"|"<<m_val["arr"][i]["tk_id"].asString()<<"\t";
@@ -285,9 +296,11 @@ void socket_client::order(){
     string res = another["status"].asString();
     if(res == "OK"){
         cout<<"预定成功"<<endl;
+        LOG_INFO << "order ok ticket=" << index;
     }
     else{
         cout<<"预定失败"<<endl;
+        LOG_WARN << "order failed ticket=" << index;
         return;
     }
 }
@@ -350,9 +363,11 @@ void socket_client::cancel(){
     string res = another["status"].asString();
     if(res == "OK"){
         cout<<"取消成功"<<endl;
+        LOG_INFO << "cancel ok index=" << index;
     }
     else{
         cout<<"取消失败：预订序号不存在或已被取消"<<endl;
+        LOG_WARN << "cancel failed index=" << index;
         return;
     }
 }
@@ -389,6 +404,12 @@ void socket_client::Run(){
 }
 int main()
 {
+    logsys::AsynLogging asyncLogger("logs/hyperticket.client", 16 * 1024 * 1024, 3);
+    logsys::Logger::SetOuput([&asyncLogger](const std::string &msg) { asyncLogger.append(msg); });
+    logsys::Logger::SetFlush([&asyncLogger]() { asyncLogger.flush(); });
+    logsys::Logger::SetLogLevel(logsys::LOG_LEVEL::INFO);
+    asyncLogger.start();
+
     socket_client cli;
     cli.LoadConfig();
     if(!cli.Connect_server()){

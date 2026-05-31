@@ -21,10 +21,11 @@ namespace hyperticket
                 if (began_ && !done_) mysql_query(conn_, "ROLLBACK");
             }
             bool ok() const { return began_; }
-            void commit()
+            bool commit()
             {
-                mysql_query(conn_, "COMMIT");
+                if (mysql_query(conn_, "COMMIT") != 0) return false;
                 done_ = true;
+                return true;
             }
             void rollback()
             {
@@ -85,7 +86,7 @@ namespace hyperticket
         // 审计为尽力而为，紧接 insert 后用 LAST_INSERT_ID() 关联。
         resvRepo_.insertAuditLastInsert(conn, "CREATE", "user:" + tel);
 
-        txn.commit();
+        if (!txn.commit()) return makeError(err::kDbUpdate);
         return makeOk();
     }
 
@@ -111,7 +112,6 @@ namespace hyperticket
             tmp["title"] = r.ticketTitle;
             tmp["addr"] = r.ticketVenue;
             tmp["use_date"] = r.eventDate;
-            tmp["event_date"] = r.eventDate;
             tmp["status"] = r.status;
             res[field::kArr].append(tmp);
         }
@@ -159,7 +159,7 @@ namespace hyperticket
         }
         resvRepo_.insertAudit(conn, r.id, "CANCEL", "user:" + tel);
 
-        txn.commit();
+        if (!txn.commit()) return makeError(err::kDbUpdate);
         return makeOk();
     }
 } // namespace hyperticket

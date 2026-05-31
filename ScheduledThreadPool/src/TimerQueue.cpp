@@ -23,10 +23,15 @@ namespace shanchuan::scheduled
             for(int i = 0; i < nfds; ++i)
             {
                 int fd = _events[i].data.fd;
-                auto it = _timers.find(fd);
-                if(it != _timers.end())
+                Timer *timer = nullptr;
                 {
-                    Timer *timer = it->second;
+                    std::lock_guard<std::mutex> lock(_mutex);
+                    auto it = _timers.find(fd);
+                    if(it != _timers.end())
+                        timer = it->second;
+                }
+                if(timer)
+                {
                     timer->handleEvent();
                     if(!timer->isRepeating())
                     {
@@ -51,6 +56,7 @@ namespace shanchuan::scheduled
         {
             _worderThread.join();
         }
+        std::lock_guard<std::mutex> lock(_mutex);
         for(auto &pair : _timers)
         {
             pair.second->closeTimer();
@@ -111,41 +117,47 @@ namespace shanchuan::scheduled
         struct epoll_event ev;
         ev.events = EPOLLIN;
         ev.data.fd = timer->getTimerId();
-        if(::epoll_ctl(_epollfd, EPOLL_CTL_ADD, timer->getTimerId(), &ev) < 0)
         {
-            LOG_ERROR << "Failed to add timerfd to epoll: " << strerror(errno);
-            timer->closeTimer();
-            delete timer;
-            return {-1, nullptr};
+            std::lock_guard<std::mutex> lock(_mutex);
+            if(::epoll_ctl(_epollfd, EPOLL_CTL_ADD, timer->getTimerId(), &ev) < 0)
+            {
+                LOG_ERROR << "Failed to add timerfd to epoll: " << strerror(errno);
+                timer->closeTimer();
+                delete timer;
+                return {-1, nullptr};
+            }
+            _timers[timer->getTimerId()] = timer;
         }
-        _timers[timer->getTimerId()] = timer;
         LOG_INFO << "added timer: fd = " << timer->getTimerId();
         return {timer->getTimerId(), timer};
     }
     bool TimerQueue::removeTimer(std::pair<int, Timer *> timer)
     {
+        std::lock_guard<std::mutex> lock(_mutex);
         int fd = timer.first;
         auto it = _timers.find(fd);
         if(it != _timers.end())
         {
             Timer *t = it->second;
             ::epoll_ctl(_epollfd, EPOLL_CTL_DEL, fd, nullptr);
+            _timers.erase(it);
             t->closeTimer();
             delete t;
-            _timers.erase(it);
             LOG_INFO << "Removed timer: fd = " << fd;
             return true;
         }
         return false;
     }
     void TimerQueue::cancel(timerId id){
+        std::lock_guard<std::mutex> lock(_mutex);
         auto it = _timers.find(id.first);
         if(it != _timers.end())
         {
+            Timer *t = it->second;
             _timers.erase(it);
             LOG_INFO << "Cancelled timer: fd = " << id.first;
-            it->second->closeTimer();
-            delete it->second;
+            t->closeTimer();
+            delete t;
         }
     }
     void TimerQueue::stop()

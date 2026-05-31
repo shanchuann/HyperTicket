@@ -1,6 +1,7 @@
 #ifndef HYPERTICKET_SCHEMA_INITIALIZER_HPP
 #define HYPERTICKET_SCHEMA_INITIALIZER_HPP
 
+#include <algorithm>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -32,6 +33,16 @@ namespace hyperticket
                                     db.password.c_str(), nullptr, db.port, nullptr, 0))
             {
                 LOG_ERROR << "mysql_real_connect failed: " << mysql_error(conn);
+                mysql_close(conn);
+                return false;
+            }
+
+            // 校验数据库名：仅允许字母/数字/下划线，防止 SQL 注入。
+            if (db.name.empty() ||
+                !std::all_of(db.name.begin(), db.name.end(),
+                             [](unsigned char ch) { return std::isalnum(ch) || ch == '_'; }))
+            {
+                LOG_ERROR << "invalid database name: " << db.name;
                 mysql_close(conn);
                 return false;
             }

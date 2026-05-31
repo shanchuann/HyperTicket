@@ -1,5 +1,6 @@
 #include "ConnectionPool.hpp"
 #include "Logger.hpp"
+#include <stdexcept>
 
 namespace shanchuan
 {
@@ -69,7 +70,7 @@ namespace shanchuan
             if (nullptr == con)
             {
                 LOG_ERROR << "mysql_init error";
-                exit(1);
+                throw std::runtime_error("mysql_init failed");
             }
 
             con = mysql_real_connect(con, url.c_str(), user.c_str(), password.c_str(),
@@ -77,7 +78,7 @@ namespace shanchuan
             if (nullptr == con)
             {
                 LOG_ERROR << "mysql_real_connect error";
-                exit(1);
+                throw std::runtime_error("mysql_real_connect failed");
             }
             connList.push_back(con);
             ++m_FreeConn;

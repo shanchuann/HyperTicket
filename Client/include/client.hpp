@@ -38,6 +38,7 @@ const int OFFSET = 3;
 
 // 请求类型枚举与服务端共享，统一定义在 Common/Protocol.hpp，消除重复。
 #include "../../Common/include/Protocol.hpp"
+#include "../../ChronoLite/include/Logger.hpp"
 using hyperticket::LOGIN;
 using hyperticket::REGISTER;
 using hyperticket::EXIT;
@@ -91,8 +92,8 @@ private:
     int user_op;
 
     Json::Value m_val;
-    //最大的预定数
-    Json::Value m_max;
+
+    std::string recvBuf_;  // 接收缓冲区：保存多消息时剩余数据
 
     bool send_json(const Json::Value &val);
     bool recv_json(Json::Value &out);

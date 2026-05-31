@@ -122,8 +122,33 @@ namespace hyperticket
                 else
                 {
                     unsigned long len = resLen_[i];
-                    if (len > resBufRaw_[i].size()) len = resBufRaw_[i].size();
-                    resBuf_[i].assign(resBufRaw_[i].data(), len);
+                    if (len <= resBufRaw_[i].size())
+                    {
+                        // 数据在缓冲区内，直接使用
+                        resBuf_[i].assign(resBufRaw_[i].data(), len);
+                    }
+                    else
+                    {
+                        // 数据被截断，用 mysql_stmt_fetch_column 重新获取完整数据
+                        resBuf_[i].resize(len);
+                        MYSQL_BIND col;
+                        std::memset(&col, 0, sizeof(col));
+                        col.buffer_type = MYSQL_TYPE_STRING;
+                        col.buffer = resBuf_[i].data();
+                        col.buffer_length = len;
+                        unsigned long colLen = 0;
+                        col.length = &colLen;
+                        bool isNull = false;
+                        col.is_null = &isNull;
+                        if (mysql_stmt_fetch_column(stmt_, &col, i, 0) != 0)
+                        {
+                            resBuf_[i].assign(resBufRaw_[i].data(), resBufRaw_[i].size());
+                        }
+                        else
+                        {
+                            resBuf_[i].resize(colLen);
+                        }
+                    }
                 }
             }
             return true;

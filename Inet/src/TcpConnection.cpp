@@ -157,8 +157,7 @@ namespace shanchuan
 
     void TcpConnection::sendInLoop(const void *data, size_t len)
     {
-        LOG_TRACE << "TcpConnection::sendInLoop(const void *data, size_t len)";
-        LOG_INFO<<"data: "<<static_cast<const char*>(data)<<" len "<<len;
+        LOG_TRACE << "TcpConnection::sendInLoop len=" << len;
         loop_->assertInLoopThread();
         ssize_t nwrote = 0;      // 向TCP缓冲区写了多少数据
         size_t remaining = len;  // 还剩多少要发送的数据
@@ -294,12 +293,11 @@ namespace shanchuan
         if (state_ == StateE::kConnected || state_ == StateE::kDisconnecting)
         {
             setState(StateE::kDisconnecting);
-            /*loop_->runAfter(
+            loop_->runAfter(
                 seconds,
-                makeWeakCallback(shared_from_this(),
-                                 &TcpConnection::forceClose));
+                muduo::makeWeakCallback(shared_from_this(),
+                                        &TcpConnection::forceClose));
             // not forceCloseInLoop to avoid race condition
-            */
         }
     }
 

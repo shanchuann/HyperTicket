@@ -30,6 +30,17 @@ set(COMMON_SRC
 set(DOMAIN_SRC
 	Domain/src/service/TicketService.cpp
 	Domain/src/service/TicketServiceTxn.cpp
+	Domain/src/ServiceUtil.cpp
+)
+
+set(CHRONOLITE_SRC
+	ChronoLite/src/AppendFile.cpp
+	ChronoLite/src/AsynLogging.cpp
+	ChronoLite/src/CountDownLatch.cpp
+	ChronoLite/src/LogFile.cpp
+	ChronoLite/src/Logger.cpp
+	ChronoLite/src/LogMessage.cpp
+	ChronoLite/src/Timestamp.cpp
 )
 
 set(SERVER_SRC
@@ -55,13 +66,7 @@ set(SERVER_SRC
 	Inet/src/TcpServer.cpp
 	Inet/src/Timer.cpp
 	Inet/src/TimerQueue.cpp
-	ChronoLite/src/AppendFile.cpp
-	ChronoLite/src/AsynLogging.cpp
-	ChronoLite/src/CountDownLatch.cpp
-	ChronoLite/src/LogFile.cpp
-	ChronoLite/src/Logger.cpp
-	ChronoLite/src/LogMessage.cpp
-	ChronoLite/src/Timestamp.cpp
+	${CHRONOLITE_SRC}
 )
 
 add_executable(ser ${SERVER_SRC} ${COMMON_SRC})
@@ -75,15 +80,15 @@ target_include_directories(ser PRIVATE
 	ChronoLite/include
 	FixedThreadPool/include
 )
-target_link_libraries(ser PRIVATE ${JSONCPP_LIB} ${MYSQLCLIENT_LIB} Threads::Threads)
+target_link_libraries(ser PRIVATE ${JSONCPP_LIB} ${MYSQLCLIENT_LIB} crypt Threads::Threads)
 
-add_executable(client Client/src/client.cpp ${COMMON_SRC})
-target_include_directories(client PRIVATE Common/include Client/include)
+add_executable(client Client/src/client.cpp ${COMMON_SRC} ${CHRONOLITE_SRC})
+target_include_directories(client PRIVATE Common/include Client/include ChronoLite/include)
 target_link_libraries(client PRIVATE ${JSONCPP_LIB} Threads::Threads)
 
-add_executable(admin Admin/src/admin.cpp ${COMMON_SRC})
+add_executable(admin Admin/src/admin.cpp ${COMMON_SRC} Domain/src/ServiceUtil.cpp ${CHRONOLITE_SRC})
 target_include_directories(admin PRIVATE Common/include Domain/include Admin/include ChronoLite/include)
-target_link_libraries(admin PRIVATE ${MYSQLCLIENT_LIB} ${JSONCPP_LIB} Threads::Threads)
+target_link_libraries(admin PRIVATE ${MYSQLCLIENT_LIB} ${JSONCPP_LIB} crypt Threads::Threads)
 
 # ---- Unit tests (zero external deps, registered with CTest) ----
 enable_testing()

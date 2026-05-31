@@ -12,6 +12,8 @@
 #else
 #error "Unsupported operating system"
 #endif
+#include "../../ChronoLite/include/Logger.hpp"
+#include "../../Domain/include/service/AdminService.hpp"
 using namespace std;
 
 enum ADMIN_OP {
@@ -56,8 +58,10 @@ public:
 private:
     MYSQL mysql;
     string db_ip;
-    string db_user; 
+    int db_port = 3306;
+    string db_user;
     string db_name;
     string db_passwd;
     bool running;
+    hyperticket::AdminService *svc_ = nullptr;  // 登录后创建，操作复用
 };

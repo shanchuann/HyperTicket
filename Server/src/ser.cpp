@@ -9,7 +9,6 @@
 #include "../../Domain/include/service/TicketService.hpp"
 #include "../../Domain/include/ServiceUtil.hpp"
 #include "../../SqlConnPool/include/ConnectionPool.hpp"
-#include "../../ChronoLite/include/AsynLogging.hpp"
 #include "../../ChronoLite/include/Logger.hpp"
 #include "../../FixedThreadPool/include/FixedThreadPool.hpp"
 #include "../../Inet/include/Buffer.hpp"
@@ -22,6 +21,7 @@
 
 #include <any>
 #include <atomic>
+#include <csignal>
 #include <sstream>
 
 using shanchuan::Buffer;
@@ -30,6 +30,14 @@ using hyperticket::makeError;
 
 namespace
 {
+    // 全局信号标志（信号处理器必须访问全局/静态变量）
+    std::atomic<bool> g_sigReceived{false};
+
+    void signalHandler(int)
+    {
+        g_sigReceived.store(true);
+    }
+
     logsys::LOG_LEVEL parseLogLevel(const std::string &level)
     {
         if (level == "TRACE") return logsys::LOG_LEVEL::TRACE;
@@ -51,11 +59,7 @@ int main()
     std::string configError;
     hyperticket::AppConfig cfg = hyperticket::AppConfig::Load("config.json", &configError);
 
-    logsys::AsynLogging asyncLogger(cfg.log.basename, cfg.log.roll_size, cfg.log.flush_interval);
-    logsys::Logger::SetOuput([&asyncLogger](const std::string &msg) { asyncLogger.append(msg); });
-    logsys::Logger::SetFlush([&asyncLogger]() { asyncLogger.flush(); });
     logsys::Logger::SetLogLevel(parseLogLevel(cfg.log.level));
-    asyncLogger.start();
 
     if (!configError.empty())
     {
@@ -69,7 +73,15 @@ int main()
     }
 
     shanchuan::ConnectionPool *pool = shanchuan::ConnectionPool::GetInstance();
-    pool->init(cfg.db.host, cfg.db.user, cfg.db.password, cfg.db.name, cfg.db.port, cfg.db.pool_size, 0);
+    try
+    {
+        pool->init(cfg.db.host, cfg.db.user, cfg.db.password, cfg.db.name, cfg.db.port, cfg.db.pool_size, 0);
+    }
+    catch (const std::exception &e)
+    {
+        LOG_FATAL << "connection pool init failed: " << e.what();
+        return 1;
+    }
 
     shanchuan::FixedThreadPool workerPool(cfg.server.worker_threads);
     shanchuan::ScheduledThreadPool scheduler;
@@ -86,19 +98,23 @@ int main()
     const int maxRps = cfg.server.max_requests_per_sec;
 
     // 连接回调：全局连接数上限 + 为每连接安装令牌桶限流器。
+    // 用 CAS 循环保证原子递增+判断，避免 TOCTOU 竞态。
     server.setConnectionCallback([&connCount, maxConn, maxRps](const TcpConnectionPtr &conn) {
         if (conn->connected())
         {
-            int n = ++connCount;
-            if (n > maxConn)
+            int old = connCount.load();
+            while (old < maxConn)
+            {
+                if (connCount.compare_exchange_weak(old, old + 1)) break;
+            }
+            if (old >= maxConn)
             {
                 LOG_WARN << "connection limit reached (" << maxConn << "), refusing " << conn->peerAddress().toIp();
-                --connCount;
                 conn->forceClose();
                 return;
             }
             conn->setContext(hyperticket::RateLimiter(maxRps));
-            LOG_INFO << "connection " << conn->name() << " UP (" << n << "/" << maxConn << ")";
+            LOG_INFO << "connection " << conn->name() << " UP (" << old + 1 << "/" << maxConn << ")";
         }
         else
         {
@@ -151,6 +167,21 @@ int main()
 
     server.start();
     LOG_INFO << "server started at " << cfg.server.ip << ":" << cfg.server.port;
+
+    // 优雅关停：SIGINT/SIGTERM 触发 EventLoop 退出
+    // 使用全局原子变量 + 定时器轮询方式
+    std::signal(SIGINT, signalHandler);
+    std::signal(SIGTERM, signalHandler);
+    // 用定时器轮询信号标志
+    scheduler.addRunEvery(1000, [&]() {
+        if (g_sigReceived.load())
+        {
+            LOG_INFO << "shutdown signal received, stopping...";
+            loop.quit();
+        }
+    });
+
     loop.loop();
+    LOG_INFO << "server stopped";
     return 0;
 }

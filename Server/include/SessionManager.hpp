@@ -8,11 +8,13 @@
 #include <string>
 #include <unordered_map>
 
+#include "../../Domain/include/ISessionManager.hpp"
+
 namespace hyperticket
 {
     // 服务端登录会话表：登录成功后签发随机 token，后续请求凭 token 反查用户身份，
     // 服务端不再信任客户端自报的 tel，从而杜绝越权。线程安全（worker 线程并发访问）。
-    class SessionManager
+    class SessionManager : public ISessionManager
     {
     public:
         // ttlMs: token 存活时长；nowMs: 可注入的时钟（默认用系统时钟），便于测试过期逻辑。
@@ -20,7 +22,7 @@ namespace hyperticket
             : ttlMs_(ttlMs) {}
 
         // 生成并存储一个新 token，返回该 token。
-        std::string create(const std::string &tel, int64_t userId, int64_t nowMs)
+        std::string create(const std::string &tel, int64_t userId, int64_t nowMs) override
         {
             std::string token = generateToken();
             std::lock_guard<std::mutex> lock(mutex_);
@@ -30,7 +32,7 @@ namespace hyperticket
 
         // 校验 token：有效则填充 tel/userId 并续期，返回 true；无效或过期返回 false。
         bool resolve(const std::string &token, int64_t nowMs,
-                     std::string &telOut, int64_t &userIdOut)
+                     std::string &telOut, int64_t &userIdOut) override
         {
             std::lock_guard<std::mutex> lock(mutex_);
             auto it = sessions_.find(token);
@@ -57,7 +59,7 @@ namespace hyperticket
         }
 
         // 定时清理过期 token。
-        void purgeExpired(int64_t nowMs)
+        void purgeExpired(int64_t nowMs) override
         {
             std::lock_guard<std::mutex> lock(mutex_);
             for (auto it = sessions_.begin(); it != sessions_.end();)

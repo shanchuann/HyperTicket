@@ -63,6 +63,10 @@ CREATE TABLE IF NOT EXISTS admins (
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
+-- 默认管理员（用户名: admin，密码: password，bcrypt 哈希）
+INSERT IGNORE INTO admins (username, password_hash, role) VALUES
+  ('admin', '$2b$12$/0yFcwnUmEoY9pkiH.dI5OUrkzielDdM5/gUih9IUweMQDBnmLG7G', 'superadmin');
+
 -- Simple audit log for important actions (reservation changes)
 CREATE TABLE IF NOT EXISTS reservation_audit (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,

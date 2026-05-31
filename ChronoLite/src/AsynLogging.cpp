@@ -5,7 +5,6 @@ namespace logsys
     const size_t BufMaxLen = 1024 * 4;
     const size_t BufQueueSize = 16;
     void AsynLogging::workthreadfunc() {
-        printf("void AsynLogging::workthreadfunc() \n");
         std::vector<std::string> buffersToWrite;
         latch_.countDown();
         while (running_) {
@@ -20,7 +19,6 @@ namespace logsys
                 buffersToWrite.swap(buffers_);
                 buffers_.reserve(BufQueueSize);
             }
-            printf("buffersToWrite.size() = %lu \n", buffersToWrite.size());
             if (buffersToWrite.size() > 25) {
                 fprintf(stderr, "Dropped log message at larger buffers \n");
                 buffersToWrite.erase(buffersToWrite.begin()+ 2, buffersToWrite.end());
@@ -39,7 +37,6 @@ namespace logsys
           latch_(1) {
         currentBuffer_.reserve(BufMaxLen);
         buffers_.reserve(BufQueueSize);
-        printf("AsynLogging Create obj \n");
     }
     AsynLogging::~AsynLogging() { if (running_) stop(); }
     void AsynLogging::append(const std::string &msg) { append(msg.c_str(), msg.size()); }

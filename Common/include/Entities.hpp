@@ -15,7 +15,7 @@ namespace hyperticket
         std::string tel;
         std::string username;
         std::string passwordHash;
-        int status = 1; // 1 正常 / 0 黑名单
+        int status = 1; // 1 正常 0 黑名单
     };
 
     struct Ticket
@@ -40,6 +40,14 @@ namespace hyperticket
         std::string ticketTitle;
         std::string ticketVenue;
         std::string eventDate;
+    };
+
+    struct Admin
+    {
+        int64_t id = 0;
+        std::string username;
+        std::string passwordHash;
+        std::string role; // "operator" / "superadmin" 等
     };
 } // namespace hyperticket
 #endif // HYPERTICKET_ENTITIES_HPP

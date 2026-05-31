@@ -39,15 +39,21 @@ namespace hyperticket
         User u;
         if (!userRepo_.findByTel(conn, tel, u))
         {
-            return makeError(err::kUserNotFound);
+            return makeError(err::kInvalidCredentials);
         }
         if (u.status != 1)
         {
             return makeError(err::kBlacklisted);
         }
-        if (u.passwordHash != hashPassword(passwd))
+        bool needRehash = false;
+        if (!verifyPassword(passwd, u.passwordHash, needRehash))
         {
-            return makeError(err::kPasswdError);
+            return makeError(err::kInvalidCredentials);
+        }
+        // 旧 FNV-1a 哈希自动升级为 bcrypt
+        if (needRehash)
+        {
+            userRepo_.updatePasswordHash(conn, tel, hashPassword(passwd));
         }
         Json::Value res = makeOk();
         res[field::kUserName] = u.username;
@@ -56,14 +62,32 @@ namespace hyperticket
         return res;
     }
 
+    // 密码强度校验：6-16 位，须包含数字、小写字母、大写字母。
+    static bool isPasswordStrong(const std::string &pwd)
+    {
+        if (pwd.size() < 6 || pwd.size() > 16) return false;
+        bool hasDigit = false, hasLower = false, hasUpper = false;
+        for (unsigned char ch : pwd)
+        {
+            if (ch >= '0' && ch <= '9') hasDigit = true;
+            else if (ch >= 'a' && ch <= 'z') hasLower = true;
+            else if (ch >= 'A' && ch <= 'Z') hasUpper = true;
+        }
+        return hasDigit && hasLower && hasUpper;
+    }
+
     Json::Value TicketService::reg(const Json::Value &req)
     {
         std::string tel = req.get(field::kUserTel, "").asString();
         std::string passwd = req.get(field::kPassword, "").asString();
         std::string name = req.get(field::kUserName, "").asString();
-        if (tel.size() != 11 || passwd.size() < 6 || passwd.size() > 16 || name.empty())
+        if (tel.size() != 11 || name.empty())
         {
             return makeError(err::kInvalidInput);
+        }
+        if (!isPasswordStrong(passwd))
+        {
+            return makeError(err::kWeakPassword);
         }
 
         MYSQL *conn = nullptr;
@@ -74,7 +98,15 @@ namespace hyperticket
         {
             return makeError(err::kDbInsert);
         }
-        return makeOk();
+        User u;
+        if (!userRepo_.findByTel(conn, tel, u))
+        {
+            return makeError(err::kDbInsert); // 刚插入却查不到，视为失败
+        }
+        Json::Value res = makeOk();
+        res[field::kUserName] = u.username;
+        res[field::kToken] = sessions_->create(tel, u.id, nowMs());
+        return res;
     }
 
     Json::Value TicketService::viewTickets()

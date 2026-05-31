@@ -1,14 +1,5 @@
 # HyperTicket 高性能票务预约系统
 
-> 基于 C++17 实现的高并发票务预约系统，支持用户注册、登录、票务查询、预订及取消功能
-> 系统依赖：`jsoncpp`、`mysqlclient`、`pthread`
-> 网络层为自研 Reactor 库 [Inet](Inet/README.md)（基于 epoll，**已替代早期的 libevent**）
-> 当前版本：v2.0 (仅支持 Linux 系统)
->
-> 搁置工作：移植 Windows 的工作此前已停滞；自切换到 Inet（依赖 epoll/timerfd/eventfd）后，Windows 移植暂不在计划内。
-
----
-
 ## 项目概述
 一个基于C++实现的分布式票务管理系统，提供以下核心功能：
 - **用户端**：注册/登录、票务查询、在线预订、订单管理、取消预订
@@ -90,18 +81,6 @@
 
 > 此处不再内联完整建表语句，避免与 `db/init.sql` 产生分歧；如需字段细节请查看该脚本。
 
-##### 用户表
-
-<img src=".\assets\user_info.png" alt="用户表" style="zoom:200%;" />
-
-##### 票务表
-
-<img src=".\assets\ticket_info.png" alt="票务表" style="zoom: 200%;" />
-
-##### 预定记录表
-
-<img src=".\assets\sub_ticket.png" alt="预定记录" style="zoom: 200%;" />
-
 ### Client 客户端
 
 #### 功能
@@ -116,16 +95,6 @@
 - `login()/register_()`: 登录/注册逻辑  
 - `view()/order()/view_my()/cancel()`: 票务操作  
 - 输入验证：手机号格式、密码复杂度（需包含数字、大小写字母）
-
-#### 界面示例
-
-##### 未登录
-
-<img src=".\assets\未登录.png" alt="未登录" style="zoom:200%;" />
-
-##### 已登录
-
-<img src=".\assets\已登录.png" alt="已登录" style="zoom: 150%;" />
 
 ### Admin 管理员模块
 #### 核心功能
@@ -143,9 +112,6 @@
   - 黑名单管理方法: 
     - `AddToBlacklist()`: 通过手机号封禁用户
     - `RemoveFromBlacklist()`: 恢复用户权限
-
-#### 操作界面示例
-<img src=".\assets\管理员.png" alt="管理员" style="zoom:200%;" />
 
 #### 典型操作流程
 1. **添加票务**
@@ -235,7 +201,7 @@ use hyperticket;
 ### 配置文件
 `config.json` 控制服务端/客户端/管理端的连接信息与线程数量。
 
-> ⚠️ `config.json` 与 `.env` 含数据库密码，已被 `.gitignore` 排除，不在版本库中。
+> `config.json` 与 `.env` 含数据库密码，已被 `.gitignore` 排除，不在版本库中。
 > 首次使用请从模板复制并填入真实值：
 >
 > ```bash
@@ -247,7 +213,7 @@ use hyperticket;
 
 可选：用 `.env` 覆盖数据库连接项（优先级：进程环境变量 > `.env` > `config.json`）。`.env` 与 `config.json` 同目录，键名为 `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME`，模板见 `.env.example`。
 
-> ⚠️ 已知限制：`io_threads` 默认为 `1`。Inet 网络库在「多 IO 线程 + 连接在一次较长事务后立即关闭」的并发场景下存在连接析构竞态（`EventLoop::abortNotInLoopThread`），尚未修复。设为 `1` 时功能与并发均正常（业务仍由多 worker 线程并行处理）。修复多 IO 线程下的析构竞态属于网络层后续工作。
+> 已知限制：`io_threads` 默认为 `1`。Inet 网络库在「多 IO 线程 + 连接在一次较长事务后立即关闭」的并发场景下存在连接析构竞态（`EventLoop::abortNotInLoopThread`），尚未修复。设为 `1` 时功能与并发均正常（业务仍由多 worker 线程并行处理）。修复多 IO 线程下的析构竞态属于网络层后续工作。
 
 ### 数据库依赖
 本项目不内置数据库，需要一个可访问的 MySQL 实例（在 `config.json` 的 `db` 段配置）。

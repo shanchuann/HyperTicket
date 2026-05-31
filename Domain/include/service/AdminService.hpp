@@ -6,6 +6,8 @@
 #include <vector>
 
 #include "../../../Common/include/Entities.hpp"
+#include "../ServiceUtil.hpp"
+#include "../repository/AdminRepository.hpp"
 #include "../repository/UserRepository.hpp"
 #include "../repository/TicketRepository.hpp"
 
@@ -30,8 +32,54 @@ namespace hyperticket
     public:
         explicit AdminService(MYSQL *conn) : conn_(conn) {}
 
+        // 管理员登录：用户名 + 密码验证。
+        bool login(const std::string &username, const std::string &password)
+        {
+            Admin admin;
+            if (!adminRepo_.findByUsername(conn_, username, admin))
+                return false;
+            bool needRehash = false;
+            if (!verifyPassword(password, admin.passwordHash, needRehash))
+                return false;
+            // 旧哈希自动迁移
+            if (needRehash)
+            {
+                adminRepo_.updatePasswordHash(conn_, username, hashPassword(password));
+            }
+            loggedAdmin_ = admin;
+            return true;
+        }
+
+        const std::string &adminUsername() const { return loggedAdmin_.username; }
+        const std::string &adminRole() const { return loggedAdmin_.role; }
+
+        // 检测是否使用默认密码 "password"。
+        bool isDefaultPassword() const
+        {
+            bool dummy = false;
+            return verifyPassword("password", loggedAdmin_.passwordHash, dummy);
+        }
+
+        // 修改管理员密码（含强度校验）。
+        bool changePassword(const std::string &username, const std::string &newPassword)
+        {
+            if (newPassword.size() < 6 || newPassword.size() > 16) return false;
+            bool hasDigit = false, hasLower = false, hasUpper = false;
+            for (unsigned char ch : newPassword)
+            {
+                if (ch >= '0' && ch <= '9') hasDigit = true;
+                else if (ch >= 'a' && ch <= 'z') hasLower = true;
+                else if (ch >= 'A' && ch <= 'Z') hasUpper = true;
+            }
+            if (!hasDigit || !hasLower || !hasUpper) return false;
+            return adminRepo_.updatePasswordHash(conn_, username, hashPassword(newPassword));
+        }
+
         bool addTicket(const std::string &venue, int totalSeats, const std::string &eventDate)
         {
+            if (totalSeats <= 0) return false;
+            // 简单校验日期格式 YYYY-MM-DD
+            if (eventDate.size() != 10 || eventDate[4] != '-' || eventDate[7] != '-') return false;
             return ticketRepo_.insert(conn_, venue, venue, totalSeats, eventDate);
         }
 
@@ -57,26 +105,25 @@ namespace hyperticket
         }
 
     private:
-        // 仅当当前状态==from 时改为 to；据此区分各种结果。
+        // 原子状态切换：仅当当前状态==from 时改为 to，避免 TOCTOU。
         BlacklistResult changeStatus(const std::string &tel, int from, int to)
         {
-            int cur = 0;
-            if (!userRepo_.getStatusByTel(conn_, tel, cur))
+            int r = userRepo_.compareAndSetStatus(conn_, tel, from, to);
+            if (r < 0)  return BlacklistResult::DbError;
+            if (r == 0)
             {
-                return BlacklistResult::UserNotFound;
-            }
-            if (cur != from)
-            {
+                // 状态不匹配：可能是用户不存在，也可能是状态已变
+                int cur = 0;
+                if (!userRepo_.getStatusByTel(conn_, tel, cur))
+                    return BlacklistResult::UserNotFound;
                 return BlacklistResult::AlreadyInState;
-            }
-            if (!userRepo_.setStatusByTel(conn_, tel, to))
-            {
-                return BlacklistResult::DbError;
             }
             return BlacklistResult::Ok;
         }
 
         MYSQL *conn_;
+        Admin loggedAdmin_;
+        AdminRepository adminRepo_;
         UserRepository userRepo_;
         TicketRepository ticketRepo_;
     };

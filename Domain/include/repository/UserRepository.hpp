@@ -43,21 +43,21 @@ namespace hyperticket
             return st.execute();
         }
 
-        // 列出全部用户（admin 查看所有用户）。
+        // 列出全部用户（admin 查看所有用户，不含密码哈希）。
         std::vector<User> listAll(MYSQL *conn)
         {
-            return query(conn, "SELECT id, tel, username, password_hash, status FROM users");
+            return query(conn, "SELECT id, tel, username, status FROM users");
         }
 
-        // 列出指定状态用户（admin 查看黑名单 status=0）。
+        // 列出指定状态用户（admin 查看黑名单 status=0，不含密码哈希）。
         std::vector<User> listByStatus(MYSQL *conn, int status)
         {
             std::vector<User> out;
-            MysqlStmt st(conn, "SELECT id, tel, username, password_hash, status FROM users WHERE status = ?");
+            MysqlStmt st(conn, "SELECT id, tel, username, status FROM users WHERE status = ?");
             if (!st.ok()) return out;
             st.bindInt(0, status);
-            if (!st.execute() || !st.bindResults(5)) return out;
-            fill(st, out);
+            if (!st.execute() || !st.bindResults(4)) return out;
+            fillNoHash(st, out);
             return out;
         }
 
@@ -83,14 +83,49 @@ namespace hyperticket
             return st.execute();
         }
 
+        // 原子更新：仅当当前状态==expectedStatus 时才设为 newStatus。
+        // 返回值：-1=错误，0=状态不匹配，1=成功。
+        int compareAndSetStatus(MYSQL *conn, const std::string &tel, int expectedStatus, int newStatus)
+        {
+            MysqlStmt st(conn, "UPDATE users SET status = ? WHERE tel = ? AND status = ?");
+            if (!st.ok()) return -1;
+            st.bindInt(0, newStatus);
+            st.bindString(1, tel);
+            st.bindInt(2, expectedStatus);
+            if (!st.execute()) return -1;
+            return mysql_affected_rows(conn) > 0 ? 1 : 0;
+        }
+
+        // 更新用户密码哈希（用于旧哈希自动迁移）。
+        bool updatePasswordHash(MYSQL *conn, const std::string &tel, const std::string &newHash)
+        {
+            MysqlStmt st(conn, "UPDATE users SET password_hash = ? WHERE tel = ?");
+            if (!st.ok()) return false;
+            st.bindString(0, newHash);
+            st.bindString(1, tel);
+            return st.execute();
+        }
+
     private:
         std::vector<User> query(MYSQL *conn, const std::string &sql)
         {
             std::vector<User> out;
             MysqlStmt st(conn, sql);
-            if (!st.ok() || !st.execute() || !st.bindResults(5)) return out;
-            fill(st, out);
+            if (!st.ok() || !st.execute() || !st.bindResults(4)) return out;
+            fillNoHash(st, out);
             return out;
+        }
+        void fillNoHash(MysqlStmt &st, std::vector<User> &out)
+        {
+            while (st.fetch())
+            {
+                User u;
+                u.id = st.getInt(0);
+                u.tel = st.getString(1);
+                u.username = st.getString(2);
+                u.status = static_cast<int>(st.getInt(3));
+                out.push_back(u);
+            }
         }
         void fill(MysqlStmt &st, std::vector<User> &out)
         {

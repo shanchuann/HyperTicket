@@ -10,7 +10,7 @@ namespace hyperticket
         std::string host = "127.0.0.1";
         int port = 3306;
         std::string user = "root";
-        std::string password = "zbk";
+        std::string password;
         std::string name = "hyperticket";
         int pool_size = 8;
     };

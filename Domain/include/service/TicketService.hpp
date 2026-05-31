@@ -4,19 +4,19 @@
 #include <jsoncpp/json/json.h>
 
 #include "../../../SqlConnPool/include/ConnectionPool.hpp"
-#include "../../../Server/include/SessionManager.hpp"
+#include "../ISessionManager.hpp"
 #include "../repository/UserRepository.hpp"
 #include "../repository/TicketRepository.hpp"
 #include "../repository/ReservationRepository.hpp"
 
 namespace hyperticket
 {
-    // 服务端业务编排层：鉴权（SessionManager）+ 事务边界（BEGIN/COMMIT/ROLLBACK）
+    // 服务端业务编排层：鉴权（ISessionManager）+ 事务边界（BEGIN/COMMIT/ROLLBACK）
     // + 调用 Repository + 用 Protocol 构造响应。不含裸 SQL，不含协议魔法字符串。
     class TicketService
     {
     public:
-        TicketService(shanchuan::ConnectionPool *pool, SessionManager *sessions)
+        TicketService(shanchuan::ConnectionPool *pool, ISessionManager *sessions)
             : pool_(pool), sessions_(sessions) {}
 
         // 请求总入口：按 type 分发。
@@ -35,7 +35,7 @@ namespace hyperticket
         Json::Value cancelTicket(const Json::Value &req);
 
         shanchuan::ConnectionPool *pool_;
-        SessionManager *sessions_;
+        ISessionManager *sessions_;
         UserRepository userRepo_;
         TicketRepository ticketRepo_;
         ReservationRepository resvRepo_;

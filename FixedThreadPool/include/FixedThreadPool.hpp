@@ -32,7 +32,7 @@ namespace shanchuan
         void run_in_thread() {
             while (_is_running) {
                 Task task;
-                if (_task_queue.take(task) == 0) task();
+                if (_task_queue.take(task) == QueueResult::Ok) task();
             }
         }
         void stop_thread_group() {
@@ -52,15 +52,13 @@ namespace shanchuan
             std::call_once(_stop_once_flag, [this]() { stop_thread_group(); });
         }
         void add_task(const Task &task) {
-            if (_task_queue.put(task) != 0) {
-                LOG_ERROR << "[FixedThreadPool] add_task(): Failed to add task to the queue, it may be full or the thread pool is stopping.";
-                if (task) task(); // 直接执行任务，避免丢失
+            if (_task_queue.put(task) != QueueResult::Ok) {
+                LOG_ERROR << "[FixedThreadPool] add_task(): queue full or stopping, task dropped";
             }
         }
         void add_task(Task &&task) {
-            if (_task_queue.put(std::forward<Task>(task)) != 0) {
-                LOG_ERROR << "[FixedThreadPool] add_task(): Failed to add task to the queue, it may be full or the thread pool is stopping.";
-                if (task) task(); // 直接执行任务，避免丢失
+            if (_task_queue.put(std::forward<Task>(task)) != QueueResult::Ok) {
+                LOG_ERROR << "[FixedThreadPool] add_task(): queue full or stopping, task dropped";
             }
         }
         template <typename F, typename... Args>
@@ -69,9 +67,9 @@ namespace shanchuan
             auto task = std::make_shared<std::packaged_task<result_type()>>(std::bind(std::forward<F>(f), std::forward<Args>(args)...));
             auto future = task->get_future();
             Task wrapper = [task]() mutable { (*task)(); };
-            // 尝试提交包装后的任务到队列，队列已满或正在停止时，直接执行任务以避免丢失
-            if (_task_queue.put(wrapper) != OK) {
-                (*task)(); 
+            // 尝试提交包装后的任务到队列，队列已满或正在停止时丢弃
+            if (_task_queue.put(wrapper) != QueueResult::Ok) {
+                LOG_ERROR << "[FixedThreadPool] submit(): queue full or stopping, task dropped";
             }
             return future;
         }

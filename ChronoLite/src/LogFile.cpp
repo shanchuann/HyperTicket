@@ -1,4 +1,5 @@
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <unistd.h>
 #include "LogCommon.hpp"
 #include "Timestamp.hpp"
@@ -8,6 +9,27 @@
 
 namespace logsys
 {
+    namespace
+    {
+        // 确保日志文件所在目录存在，逐级创建（类似 mkdir -p）。
+        void ensureDirectory(const std::string &filepath)
+        {
+            size_t pos = filepath.find_last_of('/');
+            if (pos == std::string::npos) return; // 无目录部分
+            std::string dir = filepath.substr(0, pos);
+            // 逐级创建
+            for (size_t i = 1; i < dir.size(); ++i)
+            {
+                if (dir[i] == '/')
+                {
+                    std::string sub = dir.substr(0, i);
+                    ::mkdir(sub.c_str(), 0755); // 忽略已存在的错误
+                }
+            }
+            ::mkdir(dir.c_str(), 0755);
+        }
+    } // namespace
+
     const std::string hostname() {
         char buff[SMALL_BUFF_LEN] = {0};
         if (!::gethostname(buff, SMALL_BUFF_LEN)) return std::string(buff);
@@ -67,6 +89,7 @@ namespace logsys
     bool LogFile::rollFile() {
         logsys::Timestamp now = logsys::Timestamp::Now();
         std::string filename = getLogFileName(basename_, now);
+        ensureDirectory(filename);
         time_t start = (now.getSeconds() / kRollPerSeconds_) * kRollPerSeconds_;
         if (now.getSeconds() > lastRoll_) {
             lastRoll_ = now.getSeconds();

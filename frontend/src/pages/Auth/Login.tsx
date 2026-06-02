@@ -1,10 +1,26 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
+import { authApi } from '../../api/auth';
+import { useAuth } from '../../hooks/useAuth';
 import './AuthForms.css';
+
+const errorMessages: Record<string, string> = {
+  INVALID_CREDENTIALS: '手机号或密码错误',
+  USER_NOT_FOUND: '手机号或密码错误',
+  PASSWD_ERROR: '手机号或密码错误',
+  BLACKLISTED: '该账号已被禁用，请联系管理员',
+  UNAUTHORIZED: '登录已过期，请重新登录',
+  DB_UNAVAILABLE: '服务暂时不可用，请稍后再试',
+  RATE_LIMITED: '操作过于频繁，请稍后再试',
+};
+
+const translateError = (message: string) =>
+  errorMessages[message] ?? message;
 
 const Login = () => {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [formData, setFormData] = useState({
     tel: '',
     password: ''
@@ -42,23 +58,12 @@ const Login = () => {
     setIsLoading(true);
 
     try {
-      // TODO: 调用实际的登录 API
-      // const response = await authApi.login(formData.tel, formData.password);
-
-      // 模拟登录成功
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      // 存储用户信息到 localStorage
-      localStorage.setItem('token', 'mock_token');
-      localStorage.setItem('user', JSON.stringify({
-        tel: formData.tel,
-        username: '用户'
-      }));
-
-      // 跳转到客户首页
+      const response = await authApi.login(formData.tel, formData.password);
+      const token = response.token || '';
+      login({ tel: formData.tel, username: response.username || '用户', token }, token);
       navigate('/customer');
     } catch (error) {
-      setAuthError('手机号或密码错误，请重试');
+      setAuthError(translateError(error instanceof Error ? error.message : '手机号或密码错误，请重试'));
     } finally {
       setIsLoading(false);
     }

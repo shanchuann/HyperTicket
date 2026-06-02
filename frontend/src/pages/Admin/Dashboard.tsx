@@ -1,116 +1,66 @@
 import { useState, useEffect } from 'react';
-import { Ticket, Users, ShoppingCart, TrendingUp, AlertCircle } from 'lucide-react';
+import { Ticket, Users, ShoppingCart, TrendingUp } from 'lucide-react';
+import { adminApi } from '../../api/admin';
+import type { AdminStats, AdminTicket } from '../../api/admin';
 import './Dashboard.css';
 
-interface DashboardStats {
-  totalTickets: number;
-  totalUsers: number;
-  totalOrders: number;
-  todayOrders: number;
-}
-
 const Dashboard = () => {
-  const [stats, setStats] = useState<DashboardStats>({
-    totalTickets: 0,
-    totalUsers: 0,
-    totalOrders: 0,
-    todayOrders: 0
-  });
+  const [stats, setStats] = useState<AdminStats>({ user_count: 0, ticket_count: 0, order_count: 0, today_orders: 0 });
+  const [tickets, setTickets] = useState<AdminTicket[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
 
   useEffect(() => {
-    // 模拟 API 调用
-    const loadStats = async () => {
+    const load = async () => {
       setLoading(true);
-      await new Promise(resolve => setTimeout(resolve, 500));
-      setStats({
-        totalTickets: 156,
-        totalUsers: 2847,
-        totalOrders: 12580,
-        todayOrders: 156
-      });
-      setLoading(false);
+      setError('');
+      try {
+        const [s, t] = await Promise.all([adminApi.stats(), adminApi.listTickets()]);
+        setStats(s);
+        setTickets(t);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : '加载失败');
+      } finally {
+        setLoading(false);
+      }
     };
-    loadStats();
+    load();
   }, []);
 
   const statCards = [
-    {
-      title: '票务总数',
-      value: stats.totalTickets,
-      icon: Ticket,
-      trend: '+12',
-      trendUp: true,
-      color: 'var(--color-primary)'
-    },
-    {
-      title: '用户总数',
-      value: stats.totalUsers,
-      icon: Users,
-      trend: '+5.3%',
-      trendUp: true,
-      color: 'var(--color-accent)'
-    },
-    {
-      title: '订单总数',
-      value: stats.totalOrders,
-      icon: ShoppingCart,
-      trend: '+8.1%',
-      trendUp: true,
-      color: 'var(--color-success)'
-    },
-    {
-      title: '今日订单',
-      value: stats.todayOrders,
-      icon: TrendingUp,
-      trend: '-2',
-      trendUp: false,
-      color: 'var(--color-warning)'
-    }
+    { title: '在售票务', value: stats.ticket_count, icon: Ticket,      color: 'var(--color-primary)' },
+    { title: '注册用户', value: stats.user_count,   icon: Users,       color: 'var(--color-accent)' },
+    { title: '累计订单', value: stats.order_count,  icon: ShoppingCart, color: 'var(--color-success)' },
+    { title: '今日订单', value: stats.today_orders, icon: TrendingUp,  color: 'var(--color-warning)' },
   ];
 
-  const recentOrders = [
-    { id: 12581, user: '张三', ticket: '周杰伦演唱会', amount: 1160, status: 'CONFIRMED', time: '10分钟前' },
-    { id: 12580, user: '李四', ticket: '中超联赛', amount: 240, status: 'PENDING', time: '25分钟前' },
-    { id: 12579, user: '王五', ticket: '故宫博物院', amount: 60, status: 'CONFIRMED', time: '1小时前' },
-    { id: 12578, user: '赵六', ticket: '环球影城', amount: 418, status: 'CANCELLED', time: '2小时前' },
-    { id: 12577, user: '钱七', ticket: '张学友演唱会', amount: 960, status: 'CONFIRMED', time: '3小时前' }
-  ];
+  // 库存不足：剩余不足 20% 的票务
+  const lowStockTickets = tickets
+    .filter(t => t.status === 1 && t.total_seats > 0)
+    .map(t => ({ ...t, percent: ((t.available_seats / t.total_seats) * 100) }))
+    .filter(t => t.percent < 20)
+    .sort((a, b) => a.percent - b.percent)
+    .slice(0, 5);
 
-  const lowStockTickets = [
-    { id: 1, title: '周杰伦演唱会', available: 1250, total: 80000, percent: 1.6 },
-    { id: 2, title: '复仇者联盟5', available: 45, total: 200, percent: 22.5 },
-    { id: 3, title: '张学友演唱会', available: 3200, total: 18000, percent: 17.8 }
-  ];
-
-  const formatNumber = (num: number) => {
-    return num.toLocaleString('zh-CN');
-  };
-
-  const getStatusLabel = (status: string) => {
-    const map: Record<string, string> = {
-      CONFIRMED: '已确认',
-      PENDING: '待确认',
-      CANCELLED: '已取消'
-    };
-    return map[status] || status;
-  };
-
-  const getStatusClass = (status: string) => {
-    const map: Record<string, string> = {
-      CONFIRMED: 'status-confirmed',
-      PENDING: 'status-pending',
-      CANCELLED: 'status-cancelled'
-    };
-    return map[status] || '';
-  };
+  const formatNumber = (n: number) => n.toLocaleString('zh-CN');
 
   if (loading) {
     return (
       <div className="admin-dashboard">
         <div className="dashboard-loading">
-          <div className="loading-spinner"></div>
+          <div className="loading-spinner" />
           <p>加载中...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="admin-dashboard">
+        <div className="dashboard-error">
+          <p>加载失败：{error}</p>
+          <button onClick={() => window.location.reload()}>重试</button>
         </div>
       </div>
     );
@@ -130,46 +80,42 @@ const Dashboard = () => {
             <div className="stat-content">
               <p className="stat-title">{card.title}</p>
               <p className="stat-value">{formatNumber(card.value)}</p>
-              <div className="stat-trend">
-                <span className={card.trendUp ? 'trend-up' : 'trend-down'}>
-                  {card.trendUp ? '↑' : '↓'} {card.trend}
-                </span>
-                <span className="trend-label">较上周</span>
-              </div>
             </div>
           </div>
         ))}
       </div>
 
       <div className="dashboard-grid">
-        {/* Recent Orders */}
+        {/* 所有票务列表 */}
         <div className="dashboard-section">
-          <h2 className="section-title">最近订单</h2>
+          <h2 className="section-title">票务列表</h2>
           <div className="orders-table-wrapper">
             <table className="orders-table">
               <thead>
                 <tr>
-                  <th>订单号</th>
-                  <th>用户</th>
-                  <th>票务</th>
-                  <th>金额</th>
+                  <th>ID</th>
+                  <th>名称</th>
+                  <th>场馆</th>
+                  <th>日期</th>
+                  <th>剩余/总量</th>
                   <th>状态</th>
-                  <th>时间</th>
                 </tr>
               </thead>
               <tbody>
-                {recentOrders.map(order => (
-                  <tr key={order.id}>
-                    <td className="order-id">#{order.id}</td>
-                    <td>{order.user}</td>
-                    <td>{order.ticket}</td>
-                    <td className="order-amount">¥{order.amount}</td>
+                {tickets.length === 0 ? (
+                  <tr><td colSpan={6} style={{ textAlign: 'center', color: 'var(--color-text-tertiary)' }}>暂无票务</td></tr>
+                ) : tickets.map(t => (
+                  <tr key={t.ticket_id}>
+                    <td className="order-id">#{t.ticket_id}</td>
+                    <td>{t.title}</td>
+                    <td>{t.venue}</td>
+                    <td className="order-time">{t.event_date}</td>
+                    <td>{formatNumber(t.available_seats)} / {formatNumber(t.total_seats)}</td>
                     <td>
-                      <span className={`order-status ${getStatusClass(order.status)}`}>
-                        {getStatusLabel(order.status)}
+                      <span className={`order-status ${t.status === 1 ? 'status-confirmed' : 'status-cancelled'}`}>
+                        {t.status === 1 ? '在售' : '下架'}
                       </span>
                     </td>
-                    <td className="order-time">{order.time}</td>
                   </tr>
                 ))}
               </tbody>
@@ -177,31 +123,31 @@ const Dashboard = () => {
           </div>
         </div>
 
-        {/* Low Stock Alert */}
+        {/* 库存预警 */}
         <div className="dashboard-section">
-          <div className="section-header">
-            <h2 className="section-title">库存预警</h2>
-            <AlertCircle size={18} className="alert-icon" />
-          </div>
-          <div className="stock-list">
-            {lowStockTickets.map(ticket => (
-              <div key={ticket.id} className="stock-item">
-                <div className="stock-info">
-                  <p className="stock-title">{ticket.title}</p>
-                  <p className="stock-count">
-                    剩余 {formatNumber(ticket.available)} / {formatNumber(ticket.total)}
-                  </p>
+          <h2 className="section-title">库存预警（剩余 &lt;20%）</h2>
+          {lowStockTickets.length === 0 ? (
+            <p style={{ color: 'var(--color-text-tertiary)', padding: 'var(--space-4) 0' }}>
+              所有票务库存充足
+            </p>
+          ) : (
+            <div className="stock-list">
+              {lowStockTickets.map(t => (
+                <div key={t.ticket_id} className="stock-item">
+                  <div className="stock-info">
+                    <p className="stock-title">{t.title}</p>
+                    <p className="stock-count">
+                      剩余 {formatNumber(t.available_seats)} / {formatNumber(t.total_seats)}
+                    </p>
+                  </div>
+                  <div className="stock-bar">
+                    <div className="stock-fill" style={{ width: `${t.percent.toFixed(1)}%` }} />
+                  </div>
+                  <span className="stock-percent">{t.percent.toFixed(1)}%</span>
                 </div>
-                <div className="stock-bar">
-                  <div
-                    className="stock-fill"
-                    style={{ width: `${ticket.percent}%` }}
-                  />
-                </div>
-                <span className="stock-percent">{ticket.percent}%</span>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </div>

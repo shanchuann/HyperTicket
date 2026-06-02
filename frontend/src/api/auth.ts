@@ -1,42 +1,26 @@
-// 认证相关 API
-
 import wsClient from './client';
-import type {
-  LoginRequest,
-  RegisterRequest,
-  AuthResponse,
-} from '../types';
+import type { AuthBackendResponse } from '../types';
 
 export const authApi = {
-  // 登录
-  async login(tel: string, password: string): Promise<AuthResponse> {
-    const request: LoginRequest = {
+  async login(tel: string, password: string): Promise<AuthBackendResponse> {
+    return wsClient.send<AuthBackendResponse>({
       type: 1,
-      tel,
-      password,
-    };
-    return wsClient.send<AuthResponse>(request);
+      usertel: tel,
+      passward: password,  // 后端拼写
+    });
   },
 
-  // 注册
-  async register(tel: string, username: string, password: string): Promise<AuthResponse> {
-    const request: RegisterRequest = {
+  async register(tel: string, username: string, password: string): Promise<AuthBackendResponse> {
+    return wsClient.send<AuthBackendResponse>({
       type: 2,
-      tel,
+      usertel: tel,
+      passward: password,
       username,
-      password,
-    };
-    return wsClient.send<AuthResponse>(request);
+    });
   },
 
-  // 退出
   async logout(token: string): Promise<void> {
-    const request = {
-      type: 3 as const,
-      token,
-    };
-    await wsClient.send(request);
-    // 清除本地存储
+    await wsClient.send({ type: 3, token }).catch(() => {});
     localStorage.removeItem('token');
     localStorage.removeItem('user');
   },

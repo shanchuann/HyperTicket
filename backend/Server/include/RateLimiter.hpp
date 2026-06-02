@@ -9,27 +9,35 @@ namespace hyperticket
 {
     // 单连接令牌桶限流器，存放于 TcpConnection 的 context 中。
     // 同一连接的回调始终在同一 IO 线程执行（one loop per thread），故无需加锁。
+    //
+    // 使用整数定点算法（毫令牌 = token × 1000）彻底消除浮点累积误差：
+    //   - tokensMilli  : 当前毫令牌数（实际令牌数 × 1000）
+    //   - capacityMilli: 桶容量 = perSec × 1000 毫令牌
+    //   - refillPerMs  : 每毫秒补充 perSec 毫令牌（即每秒补充 perSec 个真实令牌）
+    //   - 消耗一个真实令牌 = 消耗 1000 毫令牌
     struct RateLimiter
     {
-        double tokens;      // 当前令牌数
-        double capacity;    // 桶容量 = 每秒最大请求数
-        double refillPerMs; // 每毫秒补充的令牌
-        int64_t lastMs;     // 上次补充时间
+        int64_t tokensMilli;    // 当前毫令牌数
+        int64_t capacityMilli;  // 桶容量（毫令牌）
+        int64_t refillPerMs;    // 每毫秒补充量（毫令牌/ms = perSec）
+        int64_t lastMs;         // 上次更新时间（ms）
 
         explicit RateLimiter(int perSec)
-            : tokens(perSec), capacity(perSec),
-              refillPerMs(perSec / 1000.0), lastMs(nowMs()) {}
+            : tokensMilli(static_cast<int64_t>(perSec) * 1000)
+            , capacityMilli(static_cast<int64_t>(perSec) * 1000)
+            , refillPerMs(perSec)
+            , lastMs(nowMs()) {}
 
         // 尝试消费一个令牌；无令牌返回 false（应拒绝该请求）。
         bool allow()
         {
             int64_t now = nowMs();
-            tokens += (now - lastMs) * refillPerMs;
-            if (tokens > capacity) tokens = capacity;
+            tokensMilli += (now - lastMs) * refillPerMs;
+            if (tokensMilli > capacityMilli) tokensMilli = capacityMilli;
             lastMs = now;
-            if (tokens >= 1.0)
+            if (tokensMilli >= 1000)
             {
-                tokens -= 1.0;
+                tokensMilli -= 1000;
                 return true;
             }
             return false;

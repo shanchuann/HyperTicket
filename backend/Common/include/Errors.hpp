@@ -30,6 +30,11 @@ namespace hyperticket
 
         constexpr const char *kOrderNotFound = "ORDER_NOT_FOUND";
         constexpr const char *kOrderCannotCancel = "ORDER_CANNOT_CANCEL";
+
+        // 管理员相关
+        constexpr const char *kAdminUnauthorized = "ADMIN_UNAUTHORIZED";
+        constexpr const char *kAdminInvalidCredentials = "ADMIN_INVALID_CREDENTIALS";
+        constexpr const char *kAlreadyInState = "ALREADY_IN_STATE";
     }
 } // namespace hyperticket
 #endif // HYPERTICKET_ERRORS_HPP

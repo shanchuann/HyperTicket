@@ -1,42 +1,29 @@
-// 订单相关 API
-
 import wsClient from './client';
-import type {
-  OrderRequest,
-  ViewMyOrdersRequest,
-  ViewMyOrdersResponse,
-  CancelOrderRequest,
-  BaseResponse,
-} from '../types';
+import type { ViewMyOrdersBackendResponse, BackendResponse, Order } from '../types';
+import { normalizeOrder } from '../types';
 
 export const orderApi = {
-  // 创建订单
-  async createOrder(token: string, ticketId: number, quantity: number): Promise<BaseResponse> {
-    const request: OrderRequest = {
+  async createOrder(token: string, ticketId: number): Promise<BackendResponse> {
+    return wsClient.send<BackendResponse>({
       type: 5,
       token,
-      ticket_id: ticketId,
-      quantity,
-    };
-    return wsClient.send<BaseResponse>(request);
+      index: ticketId,       // 后端期望整数
+    });
   },
 
-  // 查看我的订单
-  async getMyOrders(token: string): Promise<ViewMyOrdersResponse> {
-    const request: ViewMyOrdersRequest = {
+  async getMyOrders(token: string): Promise<Order[]> {
+    const resp = await wsClient.send<ViewMyOrdersBackendResponse>({
       type: 6,
       token,
-    };
-    return wsClient.send<ViewMyOrdersResponse>(request);
+    });
+    return (resp.arr || []).map(normalizeOrder);
   },
 
-  // 取消订单
-  async cancelOrder(token: string, reservationId: number): Promise<BaseResponse> {
-    const request: CancelOrderRequest = {
+  async cancelOrder(token: string, reservationId: number): Promise<BackendResponse> {
+    return wsClient.send<BackendResponse>({
       type: 7,
       token,
-      reservation_id: reservationId,
-    };
-    return wsClient.send<BaseResponse>(request);
+      index: reservationId,  // 后端期望整数
+    });
   },
 };

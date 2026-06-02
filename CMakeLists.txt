@@ -40,6 +40,7 @@ set(COMMON_SRC
 set(DOMAIN_SRC
 	backend/Domain/src/service/TicketService.cpp
 	backend/Domain/src/service/TicketServiceTxn.cpp
+	backend/Domain/src/service/TicketServiceAdmin.cpp
 	backend/Domain/src/ServiceUtil.cpp
 )
 

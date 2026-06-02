@@ -34,7 +34,10 @@ namespace shanchuan
                                                 localAddr,
                                                 peerAddr));
         // TcpConnectionPtr conn = std::make_shared<TcpConnection>()
-        connections_[connName] = conn;
+        {
+            std::lock_guard<std::mutex> lock(connectionsMutex_);
+            connections_[connName] = conn;
+        }
         conn->setConnectionCallback(connectionCallback_);
         conn->setMessageCallback(messageCallback_);
         conn->setWriteComplateCallback(writeComplateCallback_);
@@ -69,14 +72,16 @@ namespace shanchuan
     {
         loop_->assertInLoopThread();
         LOG_TRACE << "TcpServer::~TcpServer [" << name_ << "] destructing";
-        // for (ConnectionMap::iterator it = connections_.begin(); it != connections_.end(); ++it)
-        for (auto it = connections_.begin(); it != connections_.end(); ++it)
+        ConnectionMap snapshot;
         {
-            TcpConnectionPtr conn = it->second;
-            it->second.reset();
-            // 使用 queueInLoop 确保异步执行，避免在析构时的竞态
+            std::lock_guard<std::mutex> lock(connectionsMutex_);
+            snapshot.swap(connections_);    // 持锁期间只 swap，不做其他操作
+        }
+        for (auto &item : snapshot)
+        {
+            TcpConnectionPtr conn = item.second;
+            item.second.reset();
             conn->getLoop()->queueInLoop(std::bind(&TcpConnection::connectDestroyed, conn));
-            conn.reset(); //
         }
     }
 

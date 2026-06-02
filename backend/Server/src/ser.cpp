@@ -207,6 +207,13 @@ int main()
                         case 5: method = "order"; break;
                         case 6: method = "view_my"; break;
                         case 7: method = "cancel"; break;
+                        case 8: method = "admin_login"; break;
+                        case 9: method = "admin_list_tickets"; break;
+                        case 10: method = "admin_add_ticket"; break;
+                        case 11: method = "admin_delete_ticket"; break;
+                        case 12: method = "admin_list_users"; break;
+                        case 13: method = "admin_stats"; break;
+                        case 14: method = "admin_blacklist"; break;
                         default: method = "unknown"; break;
                         }
                     }

@@ -1,120 +1,58 @@
-import { useState, useEffect } from 'react';
-import { Plus, Search, Edit2, Trash2, MoreHorizontal, Calendar, MapPin } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Plus, Search, Trash2, Calendar, MapPin, Loader2, X } from 'lucide-react';
+import { adminApi } from '../../api/admin';
+import type { AdminTicket } from '../../api/admin';
 import './TicketManage.css';
 
-interface Ticket {
-  id: number;
-  title: string;
-  venue: string;
-  event_date: string;
-  total_seats: number;
-  available_seats: number;
-  price: number;
-  category: string;
-  status: number;
-}
-
 const TicketManage = () => {
-  const [tickets, setTickets] = useState<Ticket[]>([]);
+  const [tickets, setTickets] = useState<AdminTicket[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [deleting, setDeleting] = useState<number | null>(null);
 
-  useEffect(() => {
-    const loadTickets = async () => {
-      setLoading(true);
-      await new Promise(resolve => setTimeout(resolve, 500));
-      setTickets([
-        {
-          id: 1,
-          title: '2026 周杰伦演唱会',
-          venue: '国家体育场（鸟巢）',
-          event_date: '2026-08-15',
-          total_seats: 80000,
-          available_seats: 1250,
-          price: 580,
-          category: '演出',
-          status: 1
-        },
-        {
-          id: 2,
-          title: '2026 中超联赛',
-          venue: '工人体育场',
-          event_date: '2026-06-20',
-          total_seats: 68000,
-          available_seats: 8500,
-          price: 120,
-          category: '赛事',
-          status: 1
-        },
-        {
-          id: 3,
-          title: '故宫博物院',
-          venue: '故宫博物院',
-          event_date: '2026-06-01',
-          total_seats: 8000,
-          available_seats: 5000,
-          price: 60,
-          category: '景区',
-          status: 1
-        },
-        {
-          id: 4,
-          title: '复仇者联盟5',
-          venue: '万达影城（CBD店）',
-          event_date: '2026-07-10',
-          total_seats: 200,
-          available_seats: 45,
-          price: 65,
-          category: '电影',
-          status: 1
-        },
-        {
-          id: 5,
-          title: '张学友经典演唱会',
-          venue: '上海梅赛德斯奔驰文化中心',
-          event_date: '2026-09-01',
-          total_seats: 18000,
-          available_seats: 3200,
-          price: 480,
-          category: '演出',
-          status: 1
-        },
-        {
-          id: 6,
-          title: '环球影城',
-          venue: '北京环球度假区',
-          event_date: '2026-06-15',
-          total_seats: 50000,
-          available_seats: 8000,
-          price: 418,
-          category: '景区',
-          status: 1
-        }
-      ]);
+  const loadTickets = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      setTickets(await adminApi.listTickets());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '加载失败');
+    } finally {
       setLoading(false);
-    };
-    loadTickets();
+    }
   }, []);
 
-  const filteredTickets = tickets.filter(ticket =>
-    ticket.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    ticket.venue.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  useEffect(() => { loadTickets(); }, [loadTickets]);
 
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('zh-CN');
+  const handleDelete = async (ticketId: number, title: string) => {
+    if (!window.confirm(`确认下架「${title}」？此操作不可撤销。`)) return;
+    setDeleting(ticketId);
+    try {
+      await adminApi.deleteTicket(ticketId);
+      setTickets(prev => prev.map(t => t.ticket_id === ticketId ? { ...t, status: 0 } : t));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : '下架失败');
+    } finally {
+      setDeleting(null);
+    }
   };
 
-  const getStockPercent = (available: number, total: number) => {
-    return ((available / total) * 100).toFixed(1);
+  const filtered = tickets.filter(t =>
+    t.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    t.venue.toLowerCase().includes(searchQuery.toLowerCase())
+  );
+
+  const formatDate = (d: string) => {
+    try { return new Date(d).toLocaleDateString('zh-CN'); } catch { return d; }
   };
 
   if (loading) {
     return (
       <div className="ticket-manage">
         <div className="ticket-manage-loading">
-          <div className="loading-spinner"></div>
-          <p>加载中...</p>
+          <div className="loading-spinner" /><p>加载中...</p>
         </div>
       </div>
     );
@@ -124,11 +62,17 @@ const TicketManage = () => {
     <div className="ticket-manage">
       <div className="ticket-manage-header">
         <h1 className="ticket-manage-title">票务管理</h1>
-        <button className="ticket-add-btn">
-          <Plus size={18} />
-          <span>添加票务</span>
+        <button className="ticket-add-btn" onClick={() => setShowAddModal(true)}>
+          <Plus size={18} /><span>添加票务</span>
         </button>
       </div>
+
+      {error && (
+        <div className="ticket-manage-error">
+          {error}
+          <button onClick={loadTickets}>重试</button>
+        </div>
+      )}
 
       <div className="ticket-manage-toolbar">
         <div className="ticket-manage-search">
@@ -137,54 +81,58 @@ const TicketManage = () => {
             type="text"
             placeholder="搜索票务名称或场馆..."
             value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
+            onChange={e => setSearchQuery(e.target.value)}
           />
         </div>
+        <span className="ticket-count-label">共 {filtered.length} 条</span>
       </div>
 
       <div className="ticket-table-wrapper">
         <table className="ticket-table">
           <thead>
             <tr>
+              <th>ID</th>
               <th>票务名称</th>
               <th>场馆</th>
               <th>日期</th>
-              <th>类别</th>
               <th>库存</th>
-              <th>价格</th>
               <th>状态</th>
               <th>操作</th>
             </tr>
           </thead>
           <tbody>
-            {filteredTickets.map(ticket => (
-              <tr key={ticket.id}>
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan={7} style={{ textAlign: 'center', color: 'var(--color-text-tertiary)', padding: 'var(--space-8)' }}>
+                  暂无票务数据
+                </td>
+              </tr>
+            ) : filtered.map(ticket => (
+              <tr key={ticket.ticket_id}>
+                <td className="ticket-id">#{ticket.ticket_id}</td>
                 <td>
-                  <div className="ticket-info">
-                    <span className="ticket-name">{ticket.title}</span>
-                  </div>
+                  <span className="ticket-name">{ticket.title}</span>
                 </td>
                 <td>
                   <div className="venue-info">
-                    <MapPin size={14} />
-                    <span>{ticket.venue}</span>
+                    <MapPin size={14} /><span>{ticket.venue}</span>
                   </div>
                 </td>
                 <td>
                   <div className="date-info">
-                    <Calendar size={14} />
-                    <span>{formatDate(ticket.event_date)}</span>
+                    <Calendar size={14} /><span>{formatDate(ticket.event_date)}</span>
                   </div>
-                </td>
-                <td>
-                  <span className="ticket-category-tag">{ticket.category}</span>
                 </td>
                 <td>
                   <div className="stock-info">
                     <div className="stock-bar-mini">
                       <div
                         className="stock-fill-mini"
-                        style={{ width: `${getStockPercent(ticket.available_seats, ticket.total_seats)}%` }}
+                        style={{
+                          width: ticket.total_seats > 0
+                            ? `${(ticket.available_seats / ticket.total_seats * 100).toFixed(1)}%`
+                            : '0%'
+                        }}
                       />
                     </div>
                     <span className="stock-text">
@@ -193,30 +141,121 @@ const TicketManage = () => {
                   </div>
                 </td>
                 <td>
-                  <span className="ticket-price">¥{ticket.price}</span>
-                </td>
-                <td>
                   <span className={`status-badge ${ticket.status === 1 ? 'active' : 'inactive'}`}>
                     {ticket.status === 1 ? '在售' : '下架'}
                   </span>
                 </td>
                 <td>
                   <div className="ticket-actions">
-                    <button className="action-btn" title="编辑">
-                      <Edit2 size={16} />
-                    </button>
-                    <button className="action-btn" title="删除">
-                      <Trash2 size={16} />
-                    </button>
-                    <button className="action-btn" title="更多">
-                      <MoreHorizontal size={16} />
-                    </button>
+                    {ticket.status === 1 && (
+                      <button
+                        className="action-btn action-btn-danger"
+                        title="下架"
+                        onClick={() => handleDelete(ticket.ticket_id, ticket.title)}
+                        disabled={deleting === ticket.ticket_id}
+                      >
+                        {deleting === ticket.ticket_id
+                          ? <Loader2 size={16} className="spinner" />
+                          : <Trash2 size={16} />}
+                      </button>
+                    )}
                   </div>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+      </div>
+
+      {/* 添加票务弹窗 */}
+      {showAddModal && (
+        <AddTicketModal
+          onClose={() => setShowAddModal(false)}
+          onSuccess={() => { setShowAddModal(false); loadTickets(); }}
+        />
+      )}
+    </div>
+  );
+};
+
+// ===== 添加票务弹窗 =====
+interface AddTicketModalProps {
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
+const AddTicketModal = ({ onClose, onSuccess }: AddTicketModalProps) => {
+  const [form, setForm] = useState({ title: '', venue: '', event_date: '', total_seats: '' });
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    setForm(prev => ({ ...prev, [e.target.name]: e.target.value }));
+    setError('');
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const seats = parseInt(form.total_seats, 10);
+    if (!form.title.trim() || !form.venue.trim() || !form.event_date) {
+      setError('请填写完整信息');
+      return;
+    }
+    if (isNaN(seats) || seats <= 0) {
+      setError('座位数必须为正整数');
+      return;
+    }
+    setSubmitting(true);
+    setError('');
+    try {
+      await adminApi.addTicket(form.title.trim(), form.venue.trim(), form.event_date, seats);
+      onSuccess();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '添加失败');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
+      <div className="modal-card">
+        <div className="modal-header">
+          <h2 className="modal-title">添加票务</h2>
+          <button className="modal-close" onClick={onClose} aria-label="关闭"><X size={20} /></button>
+        </div>
+
+        {error && <div className="modal-error">{error}</div>}
+
+        <form className="modal-form" onSubmit={handleSubmit}>
+          <div className="form-group">
+            <label className="form-label">票务名称</label>
+            <input name="title" value={form.title} onChange={handleChange}
+              className="form-input" placeholder="如：2026 周杰伦演唱会" disabled={submitting} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">场馆</label>
+            <input name="venue" value={form.venue} onChange={handleChange}
+              className="form-input" placeholder="如：国家体育场（鸟巢）" disabled={submitting} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">演出日期</label>
+            <input type="date" name="event_date" value={form.event_date} onChange={handleChange}
+              className="form-input" disabled={submitting} />
+          </div>
+          <div className="form-group">
+            <label className="form-label">总座位数</label>
+            <input type="number" name="total_seats" value={form.total_seats} onChange={handleChange}
+              className="form-input" placeholder="如：80000" min="1" disabled={submitting} />
+          </div>
+
+          <div className="modal-actions">
+            <button type="button" className="modal-btn-cancel" onClick={onClose} disabled={submitting}>取消</button>
+            <button type="submit" className="modal-btn-submit" disabled={submitting}>
+              {submitting ? <><Loader2 size={16} className="spinner" />提交中</> : '确认添加'}
+            </button>
+          </div>
+        </form>
       </div>
     </div>
   );

@@ -116,6 +116,14 @@
   color: var(--color-error);
 }
 
+/* 隐藏浏览器原生密码输入框的眼睛图标（Edge/Chrome/Safari），避免与自定义按钮重叠 */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear,
+input[type="password"]::-webkit-credentials-auto-fill-button,
+input[type="password"]::-webkit-contacts-auto-fill-button {
+  display: none !important;
+}
+
 /* Password Strength */
 .password-strength {
   display: flex;
@@ -138,6 +146,18 @@
 }
 
 .password-strength-segment.active {
+  background: var(--color-success);
+}
+
+.password-strength-segment.active.strength-weak {
+  background: var(--color-error);
+}
+
+.password-strength-segment.active.strength-medium {
+  background: var(--color-warning);
+}
+
+.password-strength-segment.active.strength-strong {
   background: var(--color-success);
 }
 

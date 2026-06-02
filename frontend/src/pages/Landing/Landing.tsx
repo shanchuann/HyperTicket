@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
   Music,
@@ -14,10 +15,12 @@ import {
   Menu,
   X
 } from 'lucide-react';
+import { useTheme } from '../../hooks/useTheme';
 import './Landing.css';
 
 const Landing = () => {
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const navigate = useNavigate();
+  const { theme, toggleTheme } = useTheme();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
@@ -28,14 +31,6 @@ const Landing = () => {
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-  }, [theme]);
-
-  const toggleTheme = () => {
-    setTheme(prev => prev === 'light' ? 'dark' : 'light');
-  };
 
   const features = [
     {
@@ -123,10 +118,10 @@ const Landing = () => {
             <a href="#features" onClick={() => setMobileMenuOpen(false)}>功能</a>
             <a href="#advantages" onClick={() => setMobileMenuOpen(false)}>优势</a>
             <a href="#how-it-works" onClick={() => setMobileMenuOpen(false)}>使用流程</a>
-            <button className="btn-secondary" onClick={() => setMobileMenuOpen(false)}>
+            <button className="btn-secondary" onClick={() => { setMobileMenuOpen(false); navigate('/auth/login'); }}>
               登录
             </button>
-            <button className="btn-primary" onClick={() => setMobileMenuOpen(false)}>
+            <button className="btn-primary" onClick={() => { setMobileMenuOpen(false); navigate('/auth/register'); }}>
               开始预订
             </button>
           </div>
@@ -184,8 +179,8 @@ const Landing = () => {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.3, delay: 0.2 }}
           >
-            <button className="btn-primary btn-large">开始预订</button>
-            <button className="btn-secondary btn-large">了解技术</button>
+            <button className="btn-primary btn-large" onClick={() => navigate('/auth/register')}>开始预订</button>
+            <button className="btn-secondary btn-large" onClick={() => document.getElementById('advantages')?.scrollIntoView({ behavior: 'smooth' })}>了解技术</button>
           </motion.div>
         </div>
       </section>
@@ -286,7 +281,7 @@ const Landing = () => {
           >
             <h2 className="cta-title">立即开始使用 HyperTicket</h2>
             <p className="cta-subtitle">加入我们，体验高效可靠的票务管理</p>
-            <button className="btn-primary btn-large">免费注册</button>
+            <button className="btn-primary btn-large" onClick={() => navigate('/auth/register')}>免费注册</button>
           </motion.div>
         </div>
       </section>

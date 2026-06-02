@@ -1,35 +1,15 @@
-import { useState, useEffect } from 'react';
 import { Outlet, Link } from 'react-router-dom';
 import { Sun, Moon, Zap, Shield, Activity } from 'lucide-react';
+import { useTheme } from '../../hooks/useTheme';
 import './AuthLayout.css';
 
 const AuthLayout = () => {
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
-
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-  }, [theme]);
-
-  const toggleTheme = () => {
-    setTheme(prev => prev === 'light' ? 'dark' : 'light');
-  };
+  const { theme, toggleTheme } = useTheme();
 
   const features = [
-    {
-      icon: Zap,
-      title: '高性能',
-      description: '单实例 QPS > 10,000'
-    },
-    {
-      icon: Shield,
-      title: '安全可靠',
-      description: '企业级安全防护'
-    },
-    {
-      icon: Activity,
-      title: '实时监控',
-      description: '99.9% 服务可用性'
-    }
+    { icon: Zap, title: '高性能', description: '单实例 QPS > 10,000' },
+    { icon: Shield, title: '安全可靠', description: '企业级安全防护' },
+    { icon: Activity, title: '实时监控', description: '99.9% 服务可用性' },
   ];
 
   return (
@@ -53,7 +33,6 @@ const AuthLayout = () => {
 
       <div className="auth-right">
         <div className="auth-illustration">
-          <h2>企业级票务管理平台</h2>
           <p>为演出、赛事、景区、电影提供一站式预订解决方案</p>
 
           <div className="auth-features">

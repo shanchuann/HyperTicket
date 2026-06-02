@@ -65,28 +65,37 @@ namespace hyperticket
         Ticket t;
         if (!ticketRepo_.lockForUpdate(conn, tkId, t))
         {
+            txn.rollback();
             return makeError(err::kTicketNotFound);
         }
         if (t.status != 1)
         {
+            txn.rollback();
             return makeError(err::kTicketOffline);
         }
         if (t.availableSeats <= 0)
         {
+            txn.rollback();
             return makeError(err::kNoTicket);
         }
         if (!ticketRepo_.adjustSeats(conn, tkId, -1))
         {
+            txn.rollback();
             return makeError(err::kDbUpdate);
         }
         if (!resvRepo_.insert(conn, userId, tkId, 1))
         {
+            txn.rollback();
             return makeError(err::kDbInsert);
         }
         // 审计为尽力而为，紧接 insert 后用 LAST_INSERT_ID() 关联。
         resvRepo_.insertAuditLastInsert(conn, "CREATE", "user:" + tel);
 
-        if (!txn.commit()) return makeError(err::kDbUpdate);
+        if (!txn.commit())
+        {
+            txn.rollback();
+            return makeError(err::kDbUpdate);
+        }
         return makeOk();
     }
 
@@ -143,23 +152,31 @@ namespace hyperticket
         Reservation r;
         if (!resvRepo_.lockOwnedForUpdate(conn, index, userId, r))
         {
+            txn.rollback();
             return makeError(err::kOrderNotFound);
         }
         if (r.status != "CONFIRMED")
         {
+            txn.rollback();
             return makeError(err::kOrderCannotCancel);
         }
         if (!resvRepo_.setCancelled(conn, r.id))
         {
+            txn.rollback();
             return makeError(err::kDbUpdate);
         }
         if (!ticketRepo_.adjustSeats(conn, r.ticketId, r.quantity))
         {
+            txn.rollback();
             return makeError(err::kDbUpdate);
         }
         resvRepo_.insertAudit(conn, r.id, "CANCEL", "user:" + tel);
 
-        if (!txn.commit()) return makeError(err::kDbUpdate);
+        if (!txn.commit())
+        {
+            txn.rollback();
+            return makeError(err::kDbUpdate);
+        }
         return makeOk();
     }
 } // namespace hyperticket

@@ -1,5 +1,22 @@
 /* Order List Styles */
 
+.order-action-msg {
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+  font-size: var(--text-body-sm);
+  font-weight: var(--weight-medium);
+}
+
+.order-action-msg.success {
+  background: oklch(0.77 0.12 65 / 0.1);
+  color: var(--color-success);
+}
+
+.order-action-msg.error {
+  background: oklch(0.62 0.15 35 / 0.1);
+  color: var(--color-error);
+}
+
 .order-list-container {
   max-width: 800px;
   margin: 0 auto;
@@ -15,6 +32,19 @@
   min-height: 400px;
   gap: var(--space-4);
   color: var(--color-text-secondary);
+}
+
+.order-list-loading .loading-spinner {
+  width: 40px;
+  height: 40px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 /* Title */
@@ -87,11 +117,6 @@
   color: var(--color-text-primary);
 }
 
-.order-date {
-  font-size: var(--text-body-sm);
-  color: var(--color-text-tertiary);
-}
-
 .order-status {
   display: flex;
   align-items: center;
@@ -146,23 +171,6 @@
   font-weight: var(--weight-semibold);
 }
 
-.order-total {
-  display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.order-total-label {
-  font-size: var(--text-body);
-  color: var(--color-text-secondary);
-}
-
-.order-total-value {
-  font-size: var(--text-h3);
-  font-weight: var(--weight-bold);
-  color: var(--color-error);
-}
-
 /* Order Actions */
 .order-actions {
   display: flex;
@@ -181,15 +189,6 @@
   transition: all var(--duration-fast) var(--ease-out-quart);
 }
 
-.order-btn-primary {
-  background: var(--color-primary);
-  color: white;
-}
-
-.order-btn-primary:hover {
-  background: var(--color-primary-hover);
-}
-
 .order-btn-secondary {
   background: var(--color-bg);
   color: var(--color-text-secondary);
@@ -201,13 +200,9 @@
   color: var(--color-primary);
 }
 
-.order-btn-danger {
-  background: var(--color-error);
-  color: white;
-}
-
-.order-btn-danger:hover {
-  filter: brightness(1.1);
+.order-btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 /* Responsive */

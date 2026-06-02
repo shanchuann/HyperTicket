@@ -12,13 +12,20 @@ namespace hyperticket
         int type = req.get(field::kType, 0).asInt();
         switch (type)
         {
-        case LOGIN:    return login(req);
-        case REGISTER: return reg(req);
-        case EXIT:     return makeOk();
-        case VIEW:     return viewTickets();
-        case ORDER:    return orderTicket(req);
-        case VIEW_MY:  return viewMyTickets(req);
-        case CANCEL:   return cancelTicket(req);
+        case LOGIN:              return login(req);
+        case REGISTER:           return reg(req);
+        case EXIT:               return makeOk();
+        case VIEW:               return viewTickets();
+        case ORDER:              return orderTicket(req);
+        case VIEW_MY:            return viewMyTickets(req);
+        case CANCEL:             return cancelTicket(req);
+        case ADMIN_LOGIN:        return adminLogin(req);
+        case ADMIN_LIST_TICKETS: return adminListTickets(req);
+        case ADMIN_ADD_TICKET:   return adminAddTicket(req);
+        case ADMIN_DELETE_TICKET:return adminDeleteTicket(req);
+        case ADMIN_LIST_USERS:   return adminListUsers(req);
+        case ADMIN_STATS:        return adminStats(req);
+        case ADMIN_BLACKLIST:    return adminBlacklist(req);
         default:       return makeError(err::kUnknownType);
         }
     }

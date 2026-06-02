@@ -1,12 +1,16 @@
 import { useState, useEffect } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Sun, Moon, User, Ticket, ShoppingBag, LogOut, Menu, X } from 'lucide-react';
+import { Sun, Moon, Ticket, ShoppingBag, LogOut, Menu, X } from 'lucide-react';
+import { useTheme } from '../../hooks/useTheme';
+import { useAuth } from '../../hooks/useAuth';
+import ConnectionStatus from '../../components/ConnectionStatus';
 import './CustomerLayout.css';
 
 const CustomerLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const { theme, toggleTheme } = useTheme();
+  const { logout } = useAuth();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [scrolled, setScrolled] = useState(false);
 
@@ -18,24 +22,14 @@ const CustomerLayout = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-  }, [theme]);
-
-  const toggleTheme = () => {
-    setTheme(prev => prev === 'light' ? 'dark' : 'light');
-  };
-
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
+    logout();
     navigate('/auth/login');
   };
 
   const navItems = [
     { path: '/customer', label: '票务浏览', icon: Ticket },
     { path: '/customer/orders', label: '我的订单', icon: ShoppingBag },
-    { path: '/customer/profile', label: '个人中心', icon: User },
   ];
 
   const isActive = (path: string) => {
@@ -67,6 +61,7 @@ const CustomerLayout = () => {
 
           {/* Desktop Actions */}
           <div className="customer-actions">
+            <ConnectionStatus />
             <button
               className="customer-theme-toggle"
               onClick={toggleTheme}

@@ -1,0 +1,63 @@
+/* Admin Login 独立页面样式 */
+
+.admin-login-page {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg);
+  padding: var(--space-4);
+}
+
+.admin-login-card {
+  width: 100%;
+  max-width: 400px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-lg);
+  padding: var(--space-8) var(--space-6);
+}
+
+.admin-login-brand {
+  text-align: center;
+  margin-bottom: var(--space-8);
+}
+
+.admin-login-icon {
+  color: var(--color-primary);
+  margin-bottom: var(--space-3);
+}
+
+.admin-login-title {
+  font-size: var(--text-h2);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-primary);
+  margin-bottom: var(--space-2);
+}
+
+.admin-login-subtitle {
+  font-size: var(--text-body-sm);
+  color: var(--color-text-secondary);
+}
+
+.admin-login-footer {
+  margin-top: var(--space-5);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: var(--text-body-sm);
+}
+
+.admin-login-theme-btn {
+  background: none;
+  border: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  font-size: var(--text-body-sm);
+  padding: 0;
+  transition: color var(--duration-fast) var(--ease-out-quart);
+}
+
+.admin-login-theme-btn:hover {
+  color: var(--color-text-secondary);
+}

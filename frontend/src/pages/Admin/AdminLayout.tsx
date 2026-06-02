@@ -1,34 +1,30 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Sun, Moon, Ticket, Users, BarChart3, Settings, LogOut, Menu, X } from 'lucide-react';
+import { Sun, Moon, Ticket, BarChart3, LogOut, Menu, X, Users } from 'lucide-react';
+import { useTheme } from '../../hooks/useTheme';
 import './AdminLayout.css';
 
 const AdminLayout = () => {
   const navigate = useNavigate();
   const location = useLocation();
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const { theme, toggleTheme } = useTheme();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
-  useEffect(() => {
-    document.documentElement.setAttribute('data-theme', theme);
-  }, [theme]);
-
-  const toggleTheme = () => {
-    setTheme(prev => prev === 'light' ? 'dark' : 'light');
-  };
+  const adminUser = (() => {
+    try { return JSON.parse(localStorage.getItem('admin_user') || '{}'); } catch { return {}; }
+  })();
 
   const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('user');
-    navigate('/auth/login');
+    localStorage.removeItem('admin_token');
+    localStorage.removeItem('admin_user');
+    navigate('/admin/login');
   };
 
   const navItems = [
     { path: '/admin', label: '概览', icon: BarChart3 },
     { path: '/admin/tickets', label: '票务管理', icon: Ticket },
     { path: '/admin/users', label: '用户管理', icon: Users },
-    { path: '/admin/settings', label: '系统设置', icon: Settings },
   ];
 
   const isActive = (path: string) => {
@@ -69,17 +65,17 @@ const AdminLayout = () => {
         </nav>
 
         <div className="admin-sidebar-footer">
-          <button
-            className="admin-nav-item"
-            onClick={toggleTheme}
-          >
+          {sidebarOpen && adminUser.username && (
+            <div className="admin-sidebar-user">
+              <span className="admin-sidebar-username">{adminUser.username}</span>
+              <span className="admin-sidebar-role">{adminUser.role || 'admin'}</span>
+            </div>
+          )}
+          <button className="admin-nav-item" onClick={toggleTheme}>
             {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
             {sidebarOpen && <span>切换主题</span>}
           </button>
-          <button
-            className="admin-nav-item"
-            onClick={handleLogout}
-          >
+          <button className="admin-nav-item" onClick={handleLogout}>
             <LogOut size={20} />
             {sidebarOpen && <span>退出登录</span>}
           </button>
@@ -126,18 +122,12 @@ const AdminLayout = () => {
         <div className="admin-sidebar-footer">
           <button
             className="admin-nav-item"
-            onClick={() => {
-              toggleTheme();
-              setMobileSidebarOpen(false);
-            }}
+            onClick={() => { toggleTheme(); setMobileSidebarOpen(false); }}
           >
             {theme === 'light' ? <Moon size={20} /> : <Sun size={20} />}
             <span>切换主题</span>
           </button>
-          <button
-            className="admin-nav-item"
-            onClick={handleLogout}
-          >
+          <button className="admin-nav-item" onClick={handleLogout}>
             <LogOut size={20} />
             <span>退出登录</span>
           </button>

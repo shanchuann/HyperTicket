@@ -1,10 +1,25 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
+import { authApi } from '../../api/auth';
+import { useAuth } from '../../hooks/useAuth';
 import './AuthForms.css';
+
+// 后端错误码 → 用户友好提示
+const errorMessages: Record<string, string> = {
+  WEAK_PASSWORD: '密码强度不足，请使用包含大小写字母、数字的组合',
+  DB_INSERT: '该手机号已被注册，请直接登录',
+  DB_UNAVAILABLE: '服务暂时不可用，请稍后再试',
+  INVALID_INPUT: '输入信息有误，请检查后重试',
+  RATE_LIMITED: '操作过于频繁，请稍后再试',
+};
+
+const translateError = (message: string) =>
+  errorMessages[message] ?? message;
 
 const Register = () => {
   const navigate = useNavigate();
+  const { login } = useAuth();
   const [formData, setFormData] = useState({
     tel: '',
     username: '',
@@ -59,27 +74,12 @@ const Register = () => {
     setIsLoading(true);
 
     try {
-      // TODO: 调用实际的注册 API
-      // const response = await authApi.register(
-      //   formData.tel,
-      //   formData.username,
-      //   formData.password
-      // );
-
-      // 模拟注册成功
-      await new Promise(resolve => setTimeout(resolve, 1500));
-
-      // 存储用户信息到 localStorage
-      localStorage.setItem('token', 'mock_token');
-      localStorage.setItem('user', JSON.stringify({
-        tel: formData.tel,
-        username: formData.username
-      }));
-
-      // 跳转到客户首页
+      const response = await authApi.register(formData.tel, formData.username, formData.password);
+      const token = response.token || '';
+      login({ tel: formData.tel, username: response.username || formData.username, token }, token);
       navigate('/customer');
     } catch (error) {
-      setAuthError('注册失败，该手机号可能已被注册');
+      setAuthError(translateError(error instanceof Error ? error.message : '注册失败，请稍后再试'));
     } finally {
       setIsLoading(false);
     }
@@ -106,6 +106,12 @@ const Register = () => {
   };
 
   const passwordStrength = getPasswordStrength(formData.password);
+  const strengthClass = passwordStrength <= 2 ? 'strength-weak'
+    : passwordStrength <= 4 ? 'strength-medium'
+    : 'strength-strong';
+  const strengthLabel = passwordStrength <= 2 ? '弱'
+    : passwordStrength <= 4 ? '中'
+    : '强';
 
   return (
     <div className="auth-form-container">
@@ -196,13 +202,13 @@ const Register = () => {
                   <div
                     key={level}
                     className={`password-strength-segment ${
-                      passwordStrength >= level ? 'active' : ''
+                      passwordStrength >= level ? `active ${strengthClass}` : ''
                     }`}
                   />
                 ))}
               </div>
               <span className="password-strength-text">
-                {passwordStrength <= 2 ? '弱' : passwordStrength <= 4 ? '中' : '强'}
+                {strengthLabel}
               </span>
             </div>
           )}

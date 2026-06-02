@@ -16,6 +16,15 @@ namespace hyperticket
         ORDER = 5,    // 预定
         VIEW_MY = 6,  // 查看本人预定
         CANCEL = 7,   // 取消预定
+
+        // 管理员 API（需携带 admin_token）
+        ADMIN_LOGIN = 8,          // 管理员登录
+        ADMIN_LIST_TICKETS = 9,   // 查看所有票务（含下架）
+        ADMIN_ADD_TICKET = 10,    // 新增票务
+        ADMIN_DELETE_TICKET = 11, // 下架票务
+        ADMIN_LIST_USERS = 12,    // 查看所有用户
+        ADMIN_STATS = 13,         // 统计数据
+        ADMIN_BLACKLIST = 14,     // 黑名单管理
     };
 
     // 协议字段名常量，避免魔法字符串散落各处。
@@ -31,6 +40,17 @@ namespace hyperticket
         constexpr const char *kIndex = "index";
         constexpr const char *kNum = "num";
         constexpr const char *kArr = "arr";
+
+        // 管理员专用字段
+        constexpr const char *kAdminToken = "admin_token";
+        constexpr const char *kTitle = "title";
+        constexpr const char *kVenue = "venue";
+        constexpr const char *kEventDate = "event_date";
+        constexpr const char *kTotalSeats = "total_seats";
+        constexpr const char *kPrice = "price";
+        constexpr const char *kTicketId = "ticket_id";
+        constexpr const char *kAction = "action"; // "add" | "remove"
+        constexpr const char *kTel = "tel";
     }
 
     // status 字段取值

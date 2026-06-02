@@ -127,8 +127,8 @@ namespace shanchuan
             {
                 void (TcpConnection::*fp)(const std::string &) = &TcpConnection::sendInLoop;
                 // 按值绑定 message：跨线程时拷贝进 functor，确保 loop 线程执行前数据仍存活。
-                // （原先绑定 message.c_str() 会传入悬垂指针，导致发送出 6 字节指针垃圾。）
-                loop_->runInLoop(std::bind(fp, this, message));
+                // shared_from_this() 延长对象生命周期，防止跨线程投递后对象析构导致悬挂。
+                loop_->runInLoop(std::bind(fp, shared_from_this(), message));
             }
         }
     }
@@ -145,7 +145,7 @@ namespace shanchuan
             else
             {
                 void (TcpConnection::*fp)(const std::string &) = &TcpConnection::sendInLoop;
-                loop_->runInLoop(std::bind(fp, this, buf->retrieveAllAsString()));
+                loop_->runInLoop(std::bind(fp, shared_from_this(), buf->retrieveAllAsString()));
             }
         }
     }
@@ -240,7 +240,7 @@ namespace shanchuan
         {
             setState(StateE::kDisconnecting);
             // socket_->shutdownWrite();
-            loop_->runInLoop(std::bind(&TcpConnection::shutdownInLoop, this));
+            loop_->runInLoop(std::bind(&TcpConnection::shutdownInLoop, shared_from_this()));
         }
     }
 

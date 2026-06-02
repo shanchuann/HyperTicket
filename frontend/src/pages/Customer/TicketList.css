@@ -6,6 +6,24 @@
   padding: var(--space-8) var(--space-6);
 }
 
+/* Order Message */
+.order-msg {
+  padding: var(--space-3) var(--space-4);
+  margin-bottom: var(--space-4);
+  font-size: var(--text-body-sm);
+  font-weight: var(--weight-medium);
+}
+
+.order-msg.success {
+  background: oklch(0.77 0.12 65 / 0.1);
+  color: var(--color-success);
+}
+
+.order-msg.error {
+  background: oklch(0.62 0.15 35 / 0.1);
+  color: var(--color-error);
+}
+
 /* Loading */
 .ticket-list-loading {
   display: flex;
@@ -22,6 +40,7 @@
   height: 40px;
   border: 2px solid var(--color-border);
   border-top-color: var(--color-primary);
+  border-radius: 50%;
   animation: spin 1s linear infinite;
 }
 

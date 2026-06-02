@@ -115,7 +115,7 @@ namespace shanchuan::scheduled
             LOG_ERROR << "Failed to read timerfd: " << strerror(errno);
             return;
         }
-        LOG_INFO << "expired count=" << (unsigned long long)expire_count;
+        LOG_TRACE << "expired count=" << (unsigned long long)expire_count;
         if (_callback != nullptr)
         {
             _callback();

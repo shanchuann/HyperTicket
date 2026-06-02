@@ -1,0 +1,3 @@
+[submodule "clients/admin-client/material-components-qml"]
+	path = clients/admin-client/material-components-qml
+	url = https://github.com/sudoevolve/material-components-qml.git

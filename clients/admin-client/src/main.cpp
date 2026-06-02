@@ -2,7 +2,7 @@
 #include <QQmlApplicationEngine>
 #include <QQmlContext>
 #include <QLibraryInfo>
-#include <QDir>
+#include <QFont>
 #include "TcpClient.hpp"
 
 int main(int argc, char *argv[])
@@ -10,6 +10,17 @@ int main(int argc, char *argv[])
     QGuiApplication app(argc, argv);
     app.setApplicationName("HyperTicket Admin");
     app.setOrganizationName("HyperTicket");
+
+    // 设置包含中文回退的默认字体
+    QFont defaultFont;
+    defaultFont.setFamilies({
+        "Noto Sans CJK SC",    // 谷歌思源黑体（首选）
+        "WenQuanYi Micro Hei", // 文泉驿（备选）
+        "Droid Sans Fallback", // Android 内置中文字体
+        "sans-serif"
+    });
+    defaultFont.setPixelSize(14);
+    QGuiApplication::setFont(defaultFont);
 
     TcpClient tcpClient;
 

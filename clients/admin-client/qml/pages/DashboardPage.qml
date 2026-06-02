@@ -33,6 +33,7 @@ ScrollView {
 
     ColumnLayout {
         width: root.availableWidth
+        anchors.margins: 24
         spacing: 24
 
         Text { text: "管理概览"; font.pixelSize: 28; font.bold: true; color: Theme.color.onBackgroundColor }

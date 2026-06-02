@@ -22,7 +22,8 @@ Item {
     }
 
     ColumnLayout {
-        anchors.fill: parent; spacing: 20
+        anchors { fill: parent; margins: 24 }
+        spacing: 20
 
         RowLayout {
             Layout.fillWidth: true

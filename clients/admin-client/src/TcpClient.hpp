@@ -1,12 +1,15 @@
 #pragma once
 #include <QObject>
 #include <QTcpSocket>
+#include <QTimer>
 #include <QQueue>
 #include <QJSValue>
+#include <QHash>
 
-// 异步 TCP 客户端，供 QML 通过 context property 调用。
-// 请求串行化（一次一个）。
-// QML 侧调用：tcpClient.request(JSON.stringify(payload), function(jsonStr){ var r = JSON.parse(jsonStr); ... })
+// 异步 TCP 客户端。
+// QML 侧通过 responseReady(seq, jsonStr) 信号接收响应，
+// request() 返回序列号，QML 用 onResponseReady 匹配。
+// 也支持旧的 callback 方式（内部转发到信号）。
 class TcpClient : public QObject
 {
     Q_OBJECT
@@ -23,8 +26,9 @@ public:
     void setHost(const QString &h) { host_ = h; emit hostChanged(); }
     void setPort(int p) { port_ = p; emit portChanged(); }
 
-    // payload: JSON 字符串；callback: function(jsonResponseString)
-    Q_INVOKABLE void request(const QString &jsonPayload, QJSValue callback);
+    // 发送请求，返回序列号。响应通过 responseReady(seq, json) 信号到达。
+    // callback 可选，若提供则自动在信号触发时调用（兼容旧写法）。
+    Q_INVOKABLE int request(const QString &jsonPayload, QJSValue callback = QJSValue());
     Q_INVOKABLE void connectToServer();
 
 signals:
@@ -32,23 +36,38 @@ signals:
     void hostChanged();
     void portChanged();
     void connectionError(const QString &message);
+    // 响应就绪：seq 是 request() 的返回值，json 是完整响应字符串
+    void responseReady(int seq, const QString &json);
 
 private slots:
     void onConnected();
     void onDisconnected();
     void onReadyRead();
     void onSocketError(QAbstractSocket::SocketError err);
+    void onConnectTimeout();
 
 private:
     void flushQueue();
+    void deliverResponse(const QString &json);
+    void deliverError(const QString &reason);
 
     QTcpSocket *socket_;
+    QTimer     *connectTimer_;  // 连接超时
+    QTimer     *responseTimer_; // 响应超时
+
     QString readBuffer_;
     QString host_ = "127.0.0.1";
-    int port_ = 7000;
+    int     port_ = 7000;
 
-    struct Pending { QString json; QJSValue callback; };
+    int seqCounter_ = 0;
+
+    struct Pending {
+        int     seq;
+        QString json;
+        QJSValue callback;
+    };
     QQueue<Pending> queue_;
-    bool waiting_ = false;
+    bool    waiting_ = false;
+    int     currentSeq_ = -1;
     QJSValue currentCallback_;
 };

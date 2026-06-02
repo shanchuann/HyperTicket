@@ -6,88 +6,36 @@ import md3.Core
 Item {
     anchors.fill: parent
 
-    Rectangle {
+    Card {
         anchors.centerIn: parent
-        width: 400
-        height: loginColumn.implicitHeight + 64
-        color: Theme.colorScheme.surfaceVariant
-        radius: 12
+        width: 380; padding: 32
 
         ColumnLayout {
-            id: loginColumn
-            anchors { left: parent.left; right: parent.right; top: parent.top; margins: 32 }
-            spacing: 20
+            width: parent.width; spacing: 20
 
-            // 标题
             ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 6
-                Text {
-                    Layout.alignment: Qt.AlignHCenter
-                    text: "HyperTicket"
-                    font.pixelSize: 28
-                    font.weight: Font.Bold
-                    color: Theme.colorScheme.primary
-                }
-                Text {
-                    Layout.alignment: Qt.AlignHCenter
-                    text: "管理员登录"
-                    font.pixelSize: 14
-                    color: Theme.colorScheme.onSurfaceVariant
-                }
+                Layout.fillWidth: true; spacing: 6
+                Text { Layout.alignment: Qt.AlignHCenter; text: "HyperTicket"; font.pixelSize: 28; font.bold: true; color: Theme.color.primary }
+                Text { Layout.alignment: Qt.AlignHCenter; text: "管理员登录"; font.pixelSize: 14; color: Theme.color.onSurfaceVariantColor }
             }
 
-            // 错误提示
-            Rectangle {
-                Layout.fillWidth: true
-                height: 40
-                color: Theme.colorScheme.errorContainer
-                radius: 4
-                visible: errorText.text !== ""
-                Text {
-                    id: errorText
-                    anchors { fill: parent; margins: 10 }
-                    wrapMode: Text.WordWrap
-                    color: Theme.colorScheme.onErrorContainer
-                    font.pixelSize: 13
-                }
-            }
+            Text { id: errorText; color: Theme.color.error; font.pixelSize: 13; visible: text !== ""; wrapMode: Text.WordWrap; Layout.fillWidth: true }
 
-            // 账号
-            TextField {
-                id: usernameField
-                Layout.fillWidth: true
-                placeholderText: "管理员账号"
-                onAccepted: passwordField.forceActiveFocus()
-            }
+            TextField { id: usernameField; label: "管理员账号"; placeholderText: "请输入账号"; Layout.fillWidth: true }
+            TextField { id: passwordField; label: "密码"; placeholderText: "请输入密码"; isPassword: true; Layout.fillWidth: true }
 
-            // 密码
-            TextField {
-                id: passwordField
-                Layout.fillWidth: true
-                placeholderText: "密码"
-                echoMode: TextInput.Password
-                onAccepted: doLogin()
-            }
-
-            // 登录按钮
             Button {
                 Layout.fillWidth: true
-                text: busy ? "验证中..." : "登录"
+                text: busy ? "验证中..." : "登录管理后台"
                 enabled: !busy && usernameField.text.length > 0 && passwordField.text.length > 0
                 property bool busy: false
 
                 onClicked: doLogin()
 
                 function doLogin() {
-                    busy = true
-                    errorText.text = ""
-                    var payload = {
-                        "type": 8,
-                        "username": usernameField.text,
-                        "passward": passwordField.text
-                    }
-                    tcpClient.request(JSON.stringify(payload), function(jsonStr) { var resp = JSON.parse(jsonStr)
+                    busy = true; errorText.text = ""
+                    tcpClient.request(JSON.stringify({ "type": 8, "username": usernameField.text, "passward": passwordField.text }), function(jsonStr) {
+                        var resp = JSON.parse(jsonStr)
                         busy = false
                         if (resp.status === "OK") {
                             app.adminToken = resp.admin_token || ""
@@ -95,11 +43,7 @@ Item {
                             app.adminRole = resp.role || ""
                             app.currentPage = 0
                         } else {
-                            var msgs = {
-                                "ADMIN_INVALID_CREDENTIALS": "账号或密码错误",
-                                "DB_UNAVAILABLE": "服务暂时不可用",
-                                "RATE_LIMITED": "操作过于频繁"
-                            }
+                            var msgs = { "ADMIN_INVALID_CREDENTIALS": "账号或密码错误", "DB_UNAVAILABLE": "服务暂时不可用", "RATE_LIMITED": "操作过于频繁" }
                             errorText.text = msgs[resp.reason] || (resp.reason || "登录失败")
                         }
                     })

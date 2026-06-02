@@ -5,7 +5,7 @@ import md3.Core
 Card {
     property string label: ""
     property int value: 0
-    property color accentColor: Theme.colorScheme.primary
+    property color accentColor: Theme.color.primary
     property string iconName: ""
 
     padding: 20
@@ -25,8 +25,8 @@ Card {
         }
         ColumnLayout {
             spacing: 4
-            Text { text: label; font.pixelSize: 13; color: Theme.colorScheme.onSurfaceVariant }
-            Text { text: value.toLocaleString(); font.pixelSize: 28; font.weight: Font.Bold; color: Theme.colorScheme.onSurface }
+            Text { text: label; font.pixelSize: 13; color: Theme.color.onSurfaceVariantColor }
+            Text { text: value.toLocaleString(); font.pixelSize: 28; font.weight: Font.Bold; color: Theme.color.onSurfaceColor }
         }
     }
 }

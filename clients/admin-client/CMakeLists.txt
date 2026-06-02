@@ -38,5 +38,9 @@ target_link_libraries(HyperTicketAdmin PRIVATE
     Qt6::Svg
     Qt6::Network
     Qt6::Widgets
-    md3Core
+    # WHOLE_ARCHIVE 确保 md3Core 的 QML_ELEMENT/QML_SINGLETON 静态初始化代码不被 linker 丢弃
+    $<LINK_LIBRARY:WHOLE_ARCHIVE,md3Core>
 )
+
+# 生成 QML 插件导入代码，确保所有静态 QML 类型在运行时注册
+qt_import_qml_plugins(HyperTicketAdmin)

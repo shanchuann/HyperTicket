@@ -12,13 +12,8 @@ ApplicationWindow {
     minimumHeight: 640
     title: "HyperTicket 管理端"
 
-    // MD3 主题配置
-    Theme {
-        id: theme
-        colorSchemeName: "default"
-    }
-
-    background: Rectangle { color: Theme.colorScheme.background }
+    // Theme 是 md3.Core 的 Singleton，直接通过 Theme.xxx 访问，无需实例化
+    background: Rectangle { color: Theme.color.background }
 
     Loader {
         id: pageLoader

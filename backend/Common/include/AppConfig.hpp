@@ -17,9 +17,9 @@ namespace hyperticket
 
     struct ServerConfig
     {
-        std::string ip = "0.0.0.0";
+        std::string ip = "127.0.0.1";   // 保守默认，仅本地监听；生产部署改为 0.0.0.0
         int port = 7000;
-        int io_threads = 4;
+        int io_threads = 1;             // 多 IO 线程竞态问题尚未完全修复，默认保持 1
         int worker_threads = 8;
         int max_connections = 1000;     // 全局最大并发连接数
         int max_requests_per_sec = 20;  // 单连接每秒最大请求数

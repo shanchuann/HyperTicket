@@ -214,6 +214,7 @@ int main()
                         case 12: method = "admin_list_users"; break;
                         case 13: method = "admin_stats"; break;
                         case 14: method = "admin_blacklist"; break;
+                        case 15: method = "admin_change_password"; break;
                         default: method = "unknown"; break;
                         }
                     }

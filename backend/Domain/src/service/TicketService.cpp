@@ -24,8 +24,9 @@ namespace hyperticket
         case ADMIN_ADD_TICKET:   return adminAddTicket(req);
         case ADMIN_DELETE_TICKET:return adminDeleteTicket(req);
         case ADMIN_LIST_USERS:   return adminListUsers(req);
-        case ADMIN_STATS:        return adminStats(req);
-        case ADMIN_BLACKLIST:    return adminBlacklist(req);
+        case ADMIN_STATS:           return adminStats(req);
+        case ADMIN_BLACKLIST:       return adminBlacklist(req);
+        case ADMIN_CHANGE_PASSWORD: return adminChangePassword(req);
         default:       return makeError(err::kUnknownType);
         }
     }

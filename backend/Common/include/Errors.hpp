@@ -35,6 +35,8 @@ namespace hyperticket
         constexpr const char *kAdminUnauthorized = "ADMIN_UNAUTHORIZED";
         constexpr const char *kAdminInvalidCredentials = "ADMIN_INVALID_CREDENTIALS";
         constexpr const char *kAlreadyInState = "ALREADY_IN_STATE";
+        constexpr const char *kPasswordTooWeak = "PASSWORD_TOO_WEAK";
+        constexpr const char *kPasswordSameAsOld = "PASSWORD_SAME_AS_OLD";
     }
 } // namespace hyperticket
 #endif // HYPERTICKET_ERRORS_HPP

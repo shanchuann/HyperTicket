@@ -42,6 +42,7 @@ namespace hyperticket
         Json::Value adminListUsers(const Json::Value &req);
         Json::Value adminStats(const Json::Value &req);
         Json::Value adminBlacklist(const Json::Value &req);
+        Json::Value adminChangePassword(const Json::Value &req);
 
         // 管理员 token 管理
         std::string createAdminToken(const std::string &username);

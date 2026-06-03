@@ -23,8 +23,9 @@ namespace hyperticket
         ADMIN_ADD_TICKET = 10,    // 新增票务
         ADMIN_DELETE_TICKET = 11, // 下架票务
         ADMIN_LIST_USERS = 12,    // 查看所有用户
-        ADMIN_STATS = 13,         // 统计数据
-        ADMIN_BLACKLIST = 14,     // 黑名单管理
+        ADMIN_STATS = 13,             // 统计数据
+        ADMIN_BLACKLIST = 14,         // 黑名单管理
+        ADMIN_CHANGE_PASSWORD = 15,   // 修改管理员密码
     };
 
     // 协议字段名常量，避免魔法字符串散落各处。

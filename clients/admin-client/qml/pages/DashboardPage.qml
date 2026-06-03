@@ -36,8 +36,6 @@ ScrollView {
         anchors.margins: 24
         spacing: 24
 
-        Text { text: "管理概览"; font.pixelSize: 28; font.bold: true; color: Theme.color.onBackgroundColor }
-
         // 统计卡片
         GridLayout {
             Layout.fillWidth: true
@@ -55,7 +53,11 @@ ScrollView {
                     ColumnLayout {
                         spacing: 4
                         Text { text: modelData.label; font.pixelSize: 13; color: Theme.color.onSurfaceVariantColor }
-                        Text { text: modelData.value.toLocaleString("zh-CN"); font.pixelSize: 28; font.bold: true; color: modelData.accent }
+                        Text {
+                            text: modelData.value.toLocaleString("zh-CN")
+                            font.pixelSize: 28; font.bold: true
+                            color: modelData.accent
+                        }
                     }
                 }
             }
@@ -80,26 +82,26 @@ ScrollView {
                 }
                 Text { visible: errorMsg !== ""; text: errorMsg; color: Theme.color.error; font.pixelSize: 13 }
 
-                // 用 DataTable，rowData 为数组
+                // DataTable 使用 role (不是 field)
                 DataTable {
                     Layout.fillWidth: true
                     visible: !loading && errorMsg === ""
                     columns: [
-                        { title: "ID",      field: "ticket_id",       width: 60  },
-                        { title: "名称",    field: "title",           width: -1  },
-                        { title: "场馆",    field: "venue",           width: 160 },
-                        { title: "日期",    field: "event_date",      width: 120 },
-                        { title: "剩余/总", field: "_stock",          width: 120 },
-                        { title: "状态",    field: "_status",         width: 80  },
+                        { label: "ID",      role: "id_str",    width: 70  },
+                        { label: "名称",    role: "title",     width: -1  },
+                        { label: "场馆",    role: "venue",     width: 160 },
+                        { label: "日期",    role: "event_date",width: 120 },
+                        { label: "剩余/总", role: "stock",     width: 130 },
+                        { label: "状态",    role: "status_str",width: 80  },
                     ]
                     rowData: tickets.map(function(t) {
                         return {
-                            ticket_id: t.ticket_id,
-                            title:     t.title,
-                            venue:     t.venue,
-                            event_date:t.event_date,
-                            _stock:    t.available_seats + " / " + t.total_seats,
-                            _status:   t.status === 1 ? "在售" : "下架"
+                            id_str:     String(t.ticket_id),
+                            title:      String(t.title      || ""),
+                            venue:      String(t.venue      || ""),
+                            event_date: String(t.event_date || ""),
+                            stock:      String(t.available_seats) + " / " + String(t.total_seats),
+                            status_str: t.status === 1 ? "在售" : "下架"
                         }
                     })
                 }

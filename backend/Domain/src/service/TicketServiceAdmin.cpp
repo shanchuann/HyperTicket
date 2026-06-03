@@ -64,11 +64,56 @@ namespace hyperticket
         if (needRehash)
             adminRepo_.updatePasswordHash(conn, username, hashPassword(passwd));
 
+        // 检测是否仍使用默认密码 "password"
+        bool dummy2 = false;
+        bool isDefault = verifyPassword("password", admin.passwordHash, dummy2);
+
         Json::Value res = makeOk();
-        res[field::kAdminToken] = createAdminToken(username);
-        res[field::kUserName]   = admin.username;
-        res["role"]             = admin.role;
+        res[field::kAdminToken]      = createAdminToken(username);
+        res[field::kUserName]        = admin.username;
+        res["role"]                  = admin.role;
+        res["is_default_password"]   = isDefault;
         return res;
+    }
+
+    // ========== ADMIN_CHANGE_PASSWORD (type 15) ==========
+    // Request:  {"type":15,"admin_token":"adm_...","new_password":"xxx"}
+    // Response: {"status":"OK"}
+
+    Json::Value TicketService::adminChangePassword(const Json::Value &req)
+    {
+        std::string who;
+        if (!resolveAdminToken(req.get(field::kAdminToken, "").asString(), who))
+            return makeError(err::kAdminUnauthorized);
+
+        std::string newPwd = req.get("new_password", "").asString();
+        if (newPwd.size() < 6 || newPwd.size() > 16)
+            return makeError(err::kPasswordTooWeak);
+
+        bool hasDigit = false, hasLower = false, hasUpper = false;
+        for (unsigned char ch : newPwd)
+        {
+            if (ch >= '0' && ch <= '9') hasDigit = true;
+            else if (ch >= 'a' && ch <= 'z') hasLower = true;
+            else if (ch >= 'A' && ch <= 'Z') hasUpper = true;
+        }
+        if (!hasDigit || !hasLower || !hasUpper)
+            return makeError(err::kPasswordTooWeak);
+
+        // 不允许与默认密码相同
+        bool dummy = false;
+        if (verifyPassword(newPwd, hashPassword("password"), dummy))
+            return makeError(err::kPasswordSameAsOld);
+
+        MYSQL *conn = nullptr;
+        shanchuan::ConnectionGuard raii(&conn, pool_);
+        if (!conn) return makeError(err::kDbUnavailable);
+
+        if (!adminRepo_.updatePasswordHash(conn, who, hashPassword(newPwd)))
+            return makeError(err::kDbUpdate);
+
+        LOG_INFO << "admin[" << who << "] changed password";
+        return makeOk();
     }
 
     // ========== ADMIN_LIST_TICKETS (type 9) ==========

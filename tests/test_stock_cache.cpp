@@ -9,12 +9,27 @@
 #include <iostream>
 #include <thread>
 #include <vector>
+#include <cstdlib>
 
 using namespace hyperticket;
 
 namespace
 {
     const int64_t kTid = 999901; // 测试专用 ticket id，避免污染业务 key
+
+    void clearTestKey(RedisConnPool *pool)
+    {
+#ifdef USE_HIREDIS
+        redisContext *ctx = nullptr;
+        RedisConnGuard guard(&ctx, pool);
+        if (!ctx) return;
+        const std::string key = "stock:" + std::to_string(kTid);
+        redisReply *reply = (redisReply *)redisCommand(ctx, "DEL %s", key.c_str());
+        if (reply) freeReplyObject(reply);
+#else
+        (void)pool;
+#endif
+    }
 
     void testDecrBasics(RedisStockCache &cache)
     {
@@ -104,9 +119,12 @@ int main()
     }
 
     RedisStockCache cache(pool.get());
+    // 测试使用固定业务隔离 key；先清理上次运行残留，保证可重复执行。
+    clearTestKey(pool.get());
     testDecrBasics(cache);
     testConcurrentDecr(cache);
     testTicketListCache(cache);
+    clearTestKey(pool.get());
 
     std::cout << "All stock cache tests PASSED" << std::endl;
 #else

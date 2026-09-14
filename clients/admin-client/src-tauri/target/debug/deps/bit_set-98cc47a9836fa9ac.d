@@ -1,0 +1,7 @@
+D:\Code\C++code\HyperTicket\clients\admin-client\src-tauri\target\debug\deps\bit_set-98cc47a9836fa9ac.d: C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\bit-set-0.8.0\src\lib.rs
+
+D:\Code\C++code\HyperTicket\clients\admin-client\src-tauri\target\debug\deps\libbit_set-98cc47a9836fa9ac.rlib: C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\bit-set-0.8.0\src\lib.rs
+
+D:\Code\C++code\HyperTicket\clients\admin-client\src-tauri\target\debug\deps\libbit_set-98cc47a9836fa9ac.rmeta: C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\bit-set-0.8.0\src\lib.rs
+
+C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\bit-set-0.8.0\src\lib.rs:

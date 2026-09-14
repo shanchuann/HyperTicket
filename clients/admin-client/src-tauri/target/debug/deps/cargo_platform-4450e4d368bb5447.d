@@ -1,0 +1,9 @@
+D:\Code\C++code\HyperTicket\clients\admin-client\src-tauri\target\debug\deps\cargo_platform-4450e4d368bb5447.d: C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo-platform-0.1.9\src\lib.rs C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo-platform-0.1.9\src\cfg.rs C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo-platform-0.1.9\src\error.rs
+
+D:\Code\C++code\HyperTicket\clients\admin-client\src-tauri\target\debug\deps\libcargo_platform-4450e4d368bb5447.rlib: C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo-platform-0.1.9\src\lib.rs C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo-platform-0.1.9\src\cfg.rs C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo-platform-0.1.9\src\error.rs
+
+D:\Code\C++code\HyperTicket\clients\admin-client\src-tauri\target\debug\deps\libcargo_platform-4450e4d368bb5447.rmeta: C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo-platform-0.1.9\src\lib.rs C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo-platform-0.1.9\src\cfg.rs C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo-platform-0.1.9\src\error.rs
+
+C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo-platform-0.1.9\src\lib.rs:
+C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo-platform-0.1.9\src\cfg.rs:
+C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\cargo-platform-0.1.9\src\error.rs:

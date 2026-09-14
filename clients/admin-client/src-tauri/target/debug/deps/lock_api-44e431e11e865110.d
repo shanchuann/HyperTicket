@@ -1,0 +1,8 @@
+D:\Code\C++code\HyperTicket\clients\admin-client\src-tauri\target\debug\deps\lock_api-44e431e11e865110.d: C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\lock_api-0.4.14\src\lib.rs C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\lock_api-0.4.14\src\mutex.rs C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\lock_api-0.4.14\src\remutex.rs C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\lock_api-0.4.14\src\rwlock.rs
+
+D:\Code\C++code\HyperTicket\clients\admin-client\src-tauri\target\debug\deps\liblock_api-44e431e11e865110.rmeta: C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\lock_api-0.4.14\src\lib.rs C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\lock_api-0.4.14\src\mutex.rs C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\lock_api-0.4.14\src\remutex.rs C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\lock_api-0.4.14\src\rwlock.rs
+
+C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\lock_api-0.4.14\src\lib.rs:
+C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\lock_api-0.4.14\src\mutex.rs:
+C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\lock_api-0.4.14\src\remutex.rs:
+C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\lock_api-0.4.14\src\rwlock.rs:

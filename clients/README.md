@@ -6,8 +6,8 @@
 clients/
 ├── user-client/    # Tauri 2 用户客户端（桌面 + Android APK）
 │                   # React + TypeScript + Rust TCP
-└── admin-client/   # Qt6 管理员客户端（桌面）
-                    # QML + C++ + Material Design 3
+└── admin-client/   # Tauri 2 管理员客户端（桌面）
+                    # React + TypeScript + Rust TCP
 ```
 
 ## 用户客户端（user-client）
@@ -26,15 +26,16 @@ rustup target add aarch64-linux-android    # Android 支持
 
 ## 管理员客户端（admin-client）
 
-技术栈：Qt6 + QML + C++
+技术栈：React + TypeScript + Vite + Tauri 2 + Rust
 
-- `QTcpSocket` 直连后端 TCP
-- QML UI + Qt Quick Controls 2
-- Material Design 3 组件库：https://github.com/sudoevolve/material-components-qml
+- Rust `send_request` 命令直连后端 TCP（`127.0.0.1:7000`）
+- React 页面与用户端统一工程模式
+- 不再依赖 Qt、QML 或 CMake
 
-### 环境依赖
+### 开发
 ```bash
-sudo apt install qt6-base-dev qt6-declarative-dev qt6-tools-dev \
-  qml6-module-qtquick-controls qml6-module-qtquick-layouts \
-  qml6-module-qtquick-window libqt6svg6-dev
+cd clients/admin-client
+npm install
+npm run dev       # Web 调试界面：http://localhost:5174
+npm run tauri dev # Tauri 桌面客户端
 ```

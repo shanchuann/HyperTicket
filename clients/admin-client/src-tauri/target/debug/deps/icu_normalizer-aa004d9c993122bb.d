@@ -1,0 +1,8 @@
+D:\Code\C++code\HyperTicket\clients\admin-client\src-tauri\target\debug\deps\icu_normalizer-aa004d9c993122bb.d: C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\icu_normalizer-2.3.0\src\lib.rs C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\icu_normalizer-2.3.0\src\properties.rs C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\icu_normalizer-2.3.0\src\provider.rs C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\icu_normalizer-2.3.0\src\uts46.rs
+
+D:\Code\C++code\HyperTicket\clients\admin-client\src-tauri\target\debug\deps\libicu_normalizer-aa004d9c993122bb.rmeta: C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\icu_normalizer-2.3.0\src\lib.rs C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\icu_normalizer-2.3.0\src\properties.rs C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\icu_normalizer-2.3.0\src\provider.rs C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\icu_normalizer-2.3.0\src\uts46.rs
+
+C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\icu_normalizer-2.3.0\src\lib.rs:
+C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\icu_normalizer-2.3.0\src\properties.rs:
+C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\icu_normalizer-2.3.0\src\provider.rs:
+C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\icu_normalizer-2.3.0\src\uts46.rs:

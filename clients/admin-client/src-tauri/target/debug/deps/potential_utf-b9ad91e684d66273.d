@@ -1,9 +1,0 @@
-D:\Code\C++code\HyperTicket\clients\admin-client\src-tauri\target\debug\deps\potential_utf-b9ad91e684d66273.d: C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\potential_utf-0.1.6\src\lib.rs C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\potential_utf-0.1.6\src\uchar.rs C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\potential_utf-0.1.6\src\ustr.rs
-
-D:\Code\C++code\HyperTicket\clients\admin-client\src-tauri\target\debug\deps\libpotential_utf-b9ad91e684d66273.rlib: C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\potential_utf-0.1.6\src\lib.rs C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\potential_utf-0.1.6\src\uchar.rs C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\potential_utf-0.1.6\src\ustr.rs
-
-D:\Code\C++code\HyperTicket\clients\admin-client\src-tauri\target\debug\deps\libpotential_utf-b9ad91e684d66273.rmeta: C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\potential_utf-0.1.6\src\lib.rs C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\potential_utf-0.1.6\src\uchar.rs C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\potential_utf-0.1.6\src\ustr.rs
-
-C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\potential_utf-0.1.6\src\lib.rs:
-C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\potential_utf-0.1.6\src\uchar.rs:
-C:\Users\15375\AppData\Local\HyperTicketCargo\registry\src\index.crates.io-1949cf8c6b5b557f\potential_utf-0.1.6\src\ustr.rs:

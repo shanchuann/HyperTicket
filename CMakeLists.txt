@@ -61,6 +61,7 @@ set(SERVER_SRC
 	backend/Server/src/RedisSessionManager.cpp
 	backend/Server/src/RedisConnPool.cpp
 	backend/Server/src/RedisStockCache.cpp
+	backend/Server/src/RedisOrderQueue.cpp
 	${DOMAIN_SRC}
 	backend/SqlConnPool/src/ConnectionPool.cpp
 	backend/ScheduledThreadPool/src/Timer.cpp

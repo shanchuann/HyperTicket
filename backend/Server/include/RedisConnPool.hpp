@@ -47,7 +47,10 @@ namespace hyperticket
         bool reconnect(redisContext *ctx);
 
         std::deque<redisContext *> connList_;
+        int lostSlots_ = 0; // 因故障丢失的连接名额，池空时尝试重建
 #endif
+        // 取连接的最长等待时间：超时抛异常让上层降级，避免 worker 永久阻塞
+        static constexpr int kAcquireTimeoutMs = 200;
         std::string host_;
         int port_;
         int poolSize_;

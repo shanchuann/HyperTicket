@@ -2,9 +2,12 @@
 #define HYPERTICKET_SERVICE_UTIL_HPP
 
 #include <cstdint>
+#include <cstdlib>
 #include <sstream>
 #include <string>
 #include <random>
+
+#include <jsoncpp/json/json.h>
 
 #include "../../ChronoLite/include/Timestamp.hpp"
 
@@ -14,6 +17,23 @@ namespace hyperticket
     inline int64_t nowMs()
     {
         return logsys::Timestamp::Now().getMicroSec() / 1000;
+    }
+
+    // 容错读取整型字段：兼容数字与数字字符串（前端 index 等字段以字符串发送）。
+    // jsoncpp 的 asInt() 遇到字符串会抛 Json::LogicError，绝不能直接用于外部输入。
+    inline int64_t getIntField(const Json::Value &req, const char *key, int64_t def)
+    {
+        const Json::Value &v = req[key];
+        if (v.isIntegral()) return v.asInt64();
+        if (v.isString())
+        {
+            const std::string s = v.asString();
+            if (s.empty()) return def;
+            char *end = nullptr;
+            long long n = std::strtoll(s.c_str(), &end, 10);
+            return (end && *end == '\0') ? static_cast<int64_t>(n) : def;
+        }
+        return def;
     }
 
     // ========== 密码哈希（bcrypt，通过 POSIX crypt） ==========

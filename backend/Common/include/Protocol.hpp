@@ -26,6 +26,21 @@ namespace hyperticket
         ADMIN_STATS = 13,             // 统计数据
         ADMIN_BLACKLIST = 14,         // 黑名单管理
         ADMIN_CHANGE_PASSWORD = 15,   // 修改管理员密码
+
+        // 用户扩展 API
+        DELETE_ORDER = 16,   // 删除已取消/已过期的预定记录
+        VIEW_SEATS   = 17,   // 查看票务座位图
+        VERIFY_ORDER = 18,   // 根据订单号验证票务状态（无需认证）
+
+        // v2 大麦网式功能扩展
+        TICKET_DETAIL  = 19, // 票品详情（简介/购票须知/艺人，无需认证）
+        PAY_ORDER      = 20, // 发起支付（v3 起创建支付流水并提交模拟网关，异步结算）
+        FAVORITE       = 21, // 收藏/取消收藏（action: add|remove）
+        VIEW_FAVORITES = 22, // 我的收藏列表
+        HOT_TICKETS    = 23, // 热门榜（按有效订单量 TOP N，无需认证）
+
+        // v3 支付模块
+        PAY_QUERY      = 24, // 查询支付结果（前端发起支付后轮询）
     };
 
     // 协议字段名常量，避免魔法字符串散落各处。
@@ -52,6 +67,21 @@ namespace hyperticket
         constexpr const char *kTicketId = "ticket_id";
         constexpr const char *kAction = "action"; // "add" | "remove"
         constexpr const char *kTel = "tel";
+
+        // v2 扩展字段
+        constexpr const char *kCity = "city";
+        constexpr const char *kKeyword = "keyword";
+        constexpr const char *kCategory = "category";
+        constexpr const char *kQuantity = "quantity";
+        constexpr const char *kDescription = "description";
+        constexpr const char *kNotice = "notice";
+        constexpr const char *kArtist = "artist";
+
+        // v3 支付模块字段
+        constexpr const char *kMethod = "method";               // 支付渠道 MOCK/ALIPAY/WECHAT
+        constexpr const char *kPaymentNo = "payment_no";        // 支付单号
+        constexpr const char *kPaymentStatus = "payment_status"; // PROCESSING/SUCCESS/FAILED/REFUNDED
+        constexpr const char *kAmount = "amount";               // 应付金额（元）
     }
 
     // status 字段取值

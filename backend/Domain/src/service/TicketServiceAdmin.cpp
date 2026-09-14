@@ -143,6 +143,11 @@ namespace hyperticket
             item["available_seats"]= t.availableSeats;
             item[field::kEventDate]= t.eventDate;
             item["status"]         = t.status;
+            item["cover_image"]    = t.coverImage;
+            item["category"]       = t.category;
+            item["price"]          = t.price;
+            item["city"]           = t.city;
+            item["artist"]         = t.artist;
             res[field::kArr].append(item);
         }
         return res;
@@ -162,7 +167,14 @@ namespace hyperticket
         std::string title     = req.get(field::kTitle, "").asString();
         std::string venue     = req.get(field::kVenue, "").asString();
         std::string eventDate = req.get(field::kEventDate, "").asString();
-        int totalSeats        = req.get(field::kTotalSeats, 0).asInt();
+        int totalSeats        = static_cast<int>(getIntField(req, field::kTotalSeats, 0));
+        std::string coverImage = req.get("cover_image", "").asString();
+        std::string category  = req.get("category", "concert").asString();
+        int price             = static_cast<int>(getIntField(req, "price", 0));
+        std::string city      = req.get(field::kCity, "北京").asString();
+        std::string artist    = req.get(field::kArtist, "").asString();
+        std::string description = req.get(field::kDescription, "").asString();
+        std::string notice    = req.get(field::kNotice, "").asString();
 
         if (title.empty() || venue.empty() || totalSeats <= 0)
             return makeError(err::kInvalidInput);
@@ -173,8 +185,16 @@ namespace hyperticket
         shanchuan::ConnectionGuard raii(&conn, pool_);
         if (!conn) return makeError(err::kDbUnavailable);
 
-        if (!ticketRepo_.insert(conn, title, venue, totalSeats, eventDate))
+        if (!ticketRepo_.insert(conn, title, venue, totalSeats, eventDate, coverImage,
+                                category, price, city, artist, description, notice))
             return makeError(err::kDbInsert);
+
+        int64_t ticketId = ticketRepo_.lastInsertId(conn);
+        // 自动生成座位（非阻塞，插入失败不影响票务创建成功）
+        seatRepo_.generate(conn, ticketId, totalSeats, price);
+
+        stock_->set(ticketId, totalSeats);   // 预热库存缓存
+        stock_->invalidateTicketList();      // 在售列表已变化
 
         LOG_INFO << "admin[" << who << "] added ticket: " << title;
         return makeOk();
@@ -192,7 +212,7 @@ namespace hyperticket
 
         if (!req.isMember(field::kTicketId))
             return makeError(err::kInvalidInput);
-        int64_t ticketId = req[field::kTicketId].asInt64();
+        int64_t ticketId = getIntField(req, field::kTicketId, -1);
 
         MYSQL *conn = nullptr;
         shanchuan::ConnectionGuard raii(&conn, pool_);
@@ -202,6 +222,9 @@ namespace hyperticket
             return makeError(err::kTicketNotFound);
         if (!ticketRepo_.setOffline(conn, ticketId))
             return makeError(err::kDbUpdate);
+
+        stock_->set(ticketId, 0);            // 下架票在缓存层直接秒拒
+        stock_->invalidateTicketList();      // 在售列表已变化
 
         LOG_INFO << "admin[" << who << "] offlined ticket_id=" << ticketId;
         return makeOk();

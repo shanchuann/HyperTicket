@@ -54,6 +54,13 @@ namespace hyperticket
         bool enabled = false;  // 默认禁用
     };
 
+    struct PaymentConfig
+    {
+        int settle_delay_ms = 1000;      // 发起支付 → 模拟网关结算的延迟
+        int settle_interval_ms = 500;    // 定时结算任务扫描间隔
+        int success_rate_percent = 100;  // 结算成功率（0-100），<100 用于演练失败路径
+    };
+
     struct AppConfig
     {
         DbConfig db;
@@ -62,6 +69,7 @@ namespace hyperticket
         ScheduleConfig schedule;
         RedisConfig redis;
         MetricsConfig metrics;
+        PaymentConfig payment;
 
         static AppConfig Load(const std::string &path, std::string *error);
     };

@@ -49,18 +49,30 @@ namespace hyperticket
 
     std::string RedisSessionManager::generateToken()
     {
-        // 生成 32 字节随机 token（64 个 hex 字符）
-        std::random_device rd;
-        std::mt19937_64 gen(rd());
-        std::uniform_int_distribution<uint64_t> dis;
-
-        std::ostringstream oss;
-        for (int i = 0; i < 4; ++i)
+        // 生成 32 字节随机 token（64 个 hex 字符）。
+        // 优先 /dev/urandom（加密安全，与内存版 SessionManager 一致），
+        // mt19937 可被预测，不能用于会话令牌。
+        unsigned char buf[32];
+        std::ifstream urandom("/dev/urandom", std::ios::binary);
+        if (!urandom.good() ||
+            !urandom.read(reinterpret_cast<char *>(buf), sizeof(buf)))
         {
-            uint64_t val = dis(gen);
-            oss << std::hex << std::setfill('0') << std::setw(16) << val;
+            // 回退：random_device（多数平台仍为加密级实现）
+            std::random_device rd;
+            for (size_t i = 0; i < sizeof(buf); ++i)
+            {
+                buf[i] = static_cast<unsigned char>(rd() & 0xFF);
+            }
         }
-        return oss.str();
+        static const char *hex = "0123456789abcdef";
+        std::string out;
+        out.reserve(sizeof(buf) * 2);
+        for (size_t i = 0; i < sizeof(buf); ++i)
+        {
+            out.push_back(hex[buf[i] >> 4]);
+            out.push_back(hex[buf[i] & 0x0F]);
+        }
+        return out;
     }
 
     std::string RedisSessionManager::create(const std::string &tel, int64_t userId, int64_t nowMs)
@@ -78,29 +90,38 @@ namespace hyperticket
         std::string jsonStr = Json::writeString(builder, value);
 
 #ifdef USE_HIREDIS
-        // 使用 Redis 存储
-        redisContext *ctx = nullptr;
-        RedisConnGuard guard(&ctx, pool_.get());
-
-        std::string key = "session:" + token;
-        int ttlSeconds = static_cast<int>(ttlMs_ / 1000);
-
-        redisReply *reply = (redisReply *)redisCommand(ctx,
-                                                       "SETEX %s %d %s",
-                                                       key.c_str(),
-                                                       ttlSeconds,
-                                                       jsonStr.c_str());
-
-        if (!reply || reply->type == REDIS_REPLY_ERROR)
+        // 使用 Redis 存储。连接池可能抛异常（Redis 故障/取连接超时），
+        // 捕获后返回空 token 表示失败，绝不让异常穿透 worker 线程。
+        try
         {
-            LOG_ERROR << "Redis SETEX failed for token " << token.substr(0, 8) << "...";
-            if (reply)
-                freeReplyObject(reply);
+            redisContext *ctx = nullptr;
+            RedisConnGuard guard(&ctx, pool_.get());
+
+            std::string key = "session:" + token;
+            int ttlSeconds = static_cast<int>(ttlMs_ / 1000);
+
+            redisReply *reply = (redisReply *)redisCommand(ctx,
+                                                           "SETEX %s %d %s",
+                                                           key.c_str(),
+                                                           ttlSeconds,
+                                                           jsonStr.c_str());
+
+            if (!reply || reply->type == REDIS_REPLY_ERROR)
+            {
+                LOG_ERROR << "Redis SETEX failed for token " << token.substr(0, 8) << "...";
+                if (reply)
+                    freeReplyObject(reply);
+                return "";
+            }
+
+            freeReplyObject(reply);
+            LOG_DEBUG << "Session created in Redis: " << token.substr(0, 8) << "... for user " << userId;
+        }
+        catch (const std::exception &e)
+        {
+            LOG_ERROR << "Redis session create failed: " << e.what();
             return "";
         }
-
-        freeReplyObject(reply);
-        LOG_DEBUG << "Session created in Redis: " << token.substr(0, 8) << "... for user " << userId;
 #else
         // 占位实现：写入文件
         std::string filename = "/tmp/hyperticket_session_" + token;
@@ -120,22 +141,34 @@ namespace hyperticket
                                       std::string &telOut, int64_t &userIdOut)
     {
 #ifdef USE_HIREDIS
-        // 从 Redis 读取
-        redisContext *ctx = nullptr;
-        RedisConnGuard guard(&ctx, pool_.get());
-
-        std::string key = "session:" + token;
-        redisReply *reply = (redisReply *)redisCommand(ctx, "GET %s", key.c_str());
-
-        if (!reply || reply->type != REDIS_REPLY_STRING)
+        // 从 Redis 读取；池异常时视为解析失败（上层返回 UNAUTHORIZED）
+        std::string jsonStr;
+        try
         {
-            if (reply)
-                freeReplyObject(reply);
+            redisContext *ctx = nullptr;
+            RedisConnGuard guard(&ctx, pool_.get());
+
+            std::string key = "session:" + token;
+            // GETEX 原子地 GET + 续期，避免 GET 后 key 在 EXPIRE 前过期的竞态
+            int ttlSeconds = static_cast<int>(ttlMs_ / 1000);
+            redisReply *reply = (redisReply *)redisCommand(
+                ctx, "GETEX %s EX %d", key.c_str(), ttlSeconds);
+
+            if (!reply || reply->type != REDIS_REPLY_STRING)
+            {
+                if (reply)
+                    freeReplyObject(reply);
+                return false;
+            }
+
+            jsonStr.assign(reply->str, reply->len);
+            freeReplyObject(reply);
+        }
+        catch (const std::exception &e)
+        {
+            LOG_ERROR << "Redis session resolve failed: " << e.what();
             return false;
         }
-
-        std::string jsonStr(reply->str, reply->len);
-        freeReplyObject(reply);
 
         // 解析 JSON
         Json::CharReaderBuilder builder;
@@ -152,15 +185,7 @@ namespace hyperticket
         // 如果能读取到，说明还没过期
         telOut = value["tel"].asString();
         userIdOut = value["userId"].asInt64();
-
-        // 续期：EXPIRE session:{token} {ttl_seconds}
-        int ttlSeconds = static_cast<int>(ttlMs_ / 1000);
-        redisReply *expireReply = (redisReply *)redisCommand(ctx, "EXPIRE %s %d", key.c_str(), ttlSeconds);
-        if (expireReply)
-        {
-            freeReplyObject(expireReply);
-        }
-
+        // 续期已由 GETEX 完成，无需额外操作
         return true;
 #else
         // 占位实现：从文件读取
@@ -223,19 +248,26 @@ namespace hyperticket
     void RedisSessionManager::remove(const std::string &token)
     {
 #ifdef USE_HIREDIS
-        // 从 Redis 删除
-        redisContext *ctx = nullptr;
-        RedisConnGuard guard(&ctx, pool_.get());
-
-        std::string key = "session:" + token;
-        redisReply *reply = (redisReply *)redisCommand(ctx, "DEL %s", key.c_str());
-
-        if (reply)
+        // 从 Redis 删除；失败仅记录日志（登出幂等，token 到 TTL 也会自动过期）
+        try
         {
-            freeReplyObject(reply);
-        }
+            redisContext *ctx = nullptr;
+            RedisConnGuard guard(&ctx, pool_.get());
 
-        LOG_DEBUG << "Session removed from Redis: " << token.substr(0, 8) << "...";
+            std::string key = "session:" + token;
+            redisReply *reply = (redisReply *)redisCommand(ctx, "DEL %s", key.c_str());
+
+            if (reply)
+            {
+                freeReplyObject(reply);
+            }
+
+            LOG_DEBUG << "Session removed from Redis: " << token.substr(0, 8) << "...";
+        }
+        catch (const std::exception &e)
+        {
+            LOG_ERROR << "Redis session remove failed: " << e.what();
+        }
 #else
         // 占位实现：删除文件
         std::string filename = "/tmp/hyperticket_session_" + token;

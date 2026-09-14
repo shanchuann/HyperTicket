@@ -33,14 +33,38 @@ CREATE TABLE IF NOT EXISTS tickets (
   available_seats INT NOT NULL DEFAULT 0,
   event_date DATE NOT NULL,
   status TINYINT NOT NULL DEFAULT 1, -- 0=hidden/cancelled,1=open,2=soldout
+  category VARCHAR(32) DEFAULT 'concert', -- concert/sports/movie/theater/exhibition
+  price INT NOT NULL DEFAULT 0,           -- base price (yuan)
+  city VARCHAR(32) NOT NULL DEFAULT '北京',  -- 演出城市（筛选用）
+  description TEXT DEFAULT NULL,            -- 演出详情简介
+  notice TEXT DEFAULT NULL,                 -- 购票须知
+  artist VARCHAR(128) DEFAULT NULL,         -- 艺人/团体
+  cover_image MEDIUMTEXT DEFAULT NULL, -- base64 encoded cover image (optional)
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CHECK (available_seats >= 0),
   INDEX idx_tickets_date (event_date),
   INDEX idx_tickets_status (status),
-  INDEX idx_tickets_status_date (status, event_date),  -- 复合索引：查询在售票务并按日期排序
-  -- 覆盖索引：避免回表查询，包含列表查询所需的所有字段
+  INDEX idx_tickets_category (category),
+  INDEX idx_tickets_city (city),
+  INDEX idx_tickets_status_date (status, event_date),
   INDEX idx_tickets_list_covering (status, id, title, venue, total_seats, available_seats, event_date)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Seats: one row per seat per ticket event, auto-generated on ticket creation
+CREATE TABLE IF NOT EXISTS seats (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  ticket_id INT NOT NULL,
+  seat_label VARCHAR(20) NOT NULL,  -- e.g. A1, B12
+  row_label VARCHAR(8) NOT NULL,
+  col_num SMALLINT NOT NULL,
+  tier ENUM('VIP','Standard','Economy') NOT NULL DEFAULT 'Standard',
+  price INT NOT NULL DEFAULT 0,     -- per-seat price (yuan), may differ by tier
+  status ENUM('AVAILABLE','SOLD') NOT NULL DEFAULT 'AVAILABLE',
+  reservation_id BIGINT NULL,
+  UNIQUE KEY uq_seat (ticket_id, seat_label),
+  INDEX idx_seats_ticket_status (ticket_id, status),
+  CONSTRAINT fk_seats_ticket FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Reservations / bookings: one record per user reservation
@@ -50,8 +74,11 @@ CREATE TABLE IF NOT EXISTS reservations (
   ticket_id INT NOT NULL,
   quantity INT NOT NULL DEFAULT 1,
   status ENUM('PENDING','CONFIRMED','CANCELLED','EXPIRED') NOT NULL DEFAULT 'CONFIRMED',
+  expire_at DATETIME DEFAULT NULL, -- PENDING 订单支付截止时间，超时定时任务回收
+  order_no VARCHAR(32) DEFAULT NULL, -- 真实订单号 HT{YYYYMMDD}{ID:06d}，下单提交后生成
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_resv_order_no (order_no),
   CONSTRAINT fk_reservations_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT fk_reservations_ticket FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE RESTRICT ON UPDATE CASCADE,
   INDEX idx_reservations_user (user_id),
@@ -59,7 +86,30 @@ CREATE TABLE IF NOT EXISTS reservations (
   INDEX idx_reservations_status (status),
   INDEX idx_reservations_user_status (user_id, status),  -- 复合索引：查询用户的有效订单
   INDEX idx_reservations_ticket_status (ticket_id, status),  -- 复合索引：统计票务预订情况
-  INDEX idx_reservations_created (created_at)  -- 按时间查询订单（报表、清理过期订单）
+  INDEX idx_reservations_created (created_at),  -- 按时间查询订单（报表、清理过期订单）
+  INDEX idx_resv_pending_expire (status, expire_at)  -- 定时回收超时 PENDING 订单
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- Payments: 支付流水表（v3 支付模块）
+-- 发起支付即写入一条 PROCESSING 流水（已提交模拟网关、等待异步结算）；
+-- 定时任务到 settle_at 后结算为 SUCCESS/FAILED；
+-- 结算成功但订单已失效（超时回收/取消）时补偿为 REFUNDED。
+CREATE TABLE IF NOT EXISTS payments (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  payment_no VARCHAR(32) DEFAULT NULL,        -- 支付单号 PY{YYYYMMDD}{ID:08d}，创建后生成
+  reservation_id BIGINT NOT NULL,
+  user_id INT NOT NULL,
+  amount INT NOT NULL DEFAULT 0,              -- 应付金额（元），创建时按选座价/票面价快照
+  method VARCHAR(16) NOT NULL DEFAULT 'MOCK', -- 支付渠道：MOCK/ALIPAY/WECHAT
+  status ENUM('PROCESSING','SUCCESS','FAILED','REFUNDED') NOT NULL DEFAULT 'PROCESSING',
+  settle_at DATETIME(3) NOT NULL,             -- 模拟网关结算时间，到点由定时任务结算
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_pay_no (payment_no),
+  INDEX idx_pay_resv_status (reservation_id, status),
+  INDEX idx_pay_settle (status, settle_at),   -- 定时结算扫描
+  CONSTRAINT fk_pay_resv FOREIGN KEY (reservation_id) REFERENCES reservations(id) ON DELETE CASCADE,
+  CONSTRAINT fk_pay_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Optional admin table for manager accounts
@@ -83,6 +133,18 @@ CREATE TABLE IF NOT EXISTS reservation_audit (
   detail TEXT,
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   INDEX idx_audit_reservation (reservation_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+-- 用户收藏（想看）
+CREATE TABLE IF NOT EXISTS favorites (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  user_id INT NOT NULL,
+  ticket_id INT NOT NULL,
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_fav (user_id, ticket_id),
+  INDEX idx_fav_user (user_id),
+  CONSTRAINT fk_fav_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_fav_ticket FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Example safe booking transaction (to run from application code)

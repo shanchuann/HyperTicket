@@ -5,6 +5,8 @@
 #include "../../Common/include/Errors.hpp"
 #include "../include/SessionManager.hpp"
 #include "../include/RedisSessionManager.hpp"
+#include "../include/RedisConnPool.hpp"
+#include "../include/RedisStockCache.hpp"
 #include "../include/MetricsManager.hpp"
 #include "../include/RateLimiter.hpp"
 #include "../include/SchemaInitializer.hpp"
@@ -106,7 +108,28 @@ int main()
         sessionMgr = std::make_unique<hyperticket::SessionManager>();
     }
 
-    hyperticket::TicketService service(pool, sessionMgr.get());
+    // 可选：Redis 库存缓存（预扣减挡在 MySQL 前 + 在售列表缓存）。
+    // 初始化失败仅告警并降级为无缓存模式，不影响服务启动。
+    std::unique_ptr<hyperticket::RedisConnPool> stockRedisPool;
+    std::unique_ptr<hyperticket::RedisStockCache> stockCache;
+    if (cfg.redis.enabled)
+    {
+        try
+        {
+            stockRedisPool = std::make_unique<hyperticket::RedisConnPool>(
+                cfg.redis.host, cfg.redis.port, cfg.redis.pool_size);
+            stockCache = std::make_unique<hyperticket::RedisStockCache>(stockRedisPool.get());
+            LOG_INFO << "Redis stock cache enabled (pool size " << cfg.redis.pool_size << ")";
+        }
+        catch (const std::exception &e)
+        {
+            LOG_ERROR << "Redis stock cache init failed, running without cache: " << e.what();
+            stockRedisPool.reset();
+            stockCache.reset();
+        }
+    }
+
+    hyperticket::TicketService service(pool, sessionMgr.get(), stockCache.get());
 
     // 可选：启动 Metrics Manager
     std::unique_ptr<hyperticket::MetricsManager> metrics;
@@ -187,7 +210,25 @@ int main()
 
             workerPool.add_task([conn, req, &service, &metrics]() {
                 auto start = std::chrono::steady_clock::now();
-                Json::Value resp = service.handle(req);
+                // 高可用兜底：业务异常绝不允许穿透 worker 线程（未捕获异常会
+                // std::terminate 杀死整个进程），统一转为 INTERNAL 错误响应。
+                Json::Value resp;
+                try
+                {
+                    resp = service.handle(req);
+                }
+                catch (const std::exception &e)
+                {
+                    LOG_ERROR << "handle request failed: " << e.what();
+                    resp = makeError("INTERNAL");
+                    if (metrics) metrics->recordError("internal");
+                }
+                catch (...)
+                {
+                    LOG_ERROR << "handle request failed: unknown exception";
+                    resp = makeError("INTERNAL");
+                    if (metrics) metrics->recordError("internal");
+                }
                 auto end = std::chrono::steady_clock::now();
 
                 // 记录 metrics
@@ -195,7 +236,7 @@ int main()
                 {
                     double duration = std::chrono::duration<double>(end - start).count();
                     std::string method = "unknown";
-                    if (req.isMember("type"))
+                    if (req.isMember("type") && req["type"].isIntegral())
                     {
                         int type = req["type"].asInt();
                         switch (type)
@@ -215,17 +256,29 @@ int main()
                         case 13: method = "admin_stats"; break;
                         case 14: method = "admin_blacklist"; break;
                         case 15: method = "admin_change_password"; break;
+                        case 16: method = "delete_order"; break;
+                        case 17: method = "view_seats"; break;
+                        case 18: method = "verify_order"; break;
+                        case 19: method = "ticket_detail"; break;
+                        case 20: method = "pay_order"; break;
+                        case 21: method = "favorite"; break;
+                        case 22: method = "view_favorites"; break;
+                        case 23: method = "hot_tickets"; break;
+                        case 24: method = "pay_query"; break;
                         default: method = "unknown"; break;
                         }
                     }
 
-                    std::string status = (resp.isMember("code") && resp["code"].asInt() == 0) ? "success" : "failed";
-                    metrics->recordRequest(method, status);
+                    const std::string outcome =
+                        resp.get(hyperticket::field::kStatus, "").asString() == hyperticket::status::kOk
+                            ? "success"
+                            : "failed";
+                    metrics->recordRequest(method, outcome);
                     metrics->recordRequestDuration(method, duration);
 
                     if (method == "order")
                     {
-                        metrics->recordOrder(status);
+                        metrics->recordOrder(outcome);
                     }
                 }
 
@@ -236,6 +289,11 @@ int main()
 
     scheduler.addRunEvery(cfg.schedule.stats_interval_ms, [&service]() { service.logStats(); });
     scheduler.addRunEvery(cfg.schedule.ticket_status_interval_ms, [&service]() { service.refreshTicketStatus(); });
+    // 每 30s 回收超时未支付的 PENDING 订单（15 分钟支付窗口）
+    scheduler.addRunEvery(30000, [&service]() { service.expirePendingOrders(); });
+    // 支付结算：模拟网关异步回调，结算到期的 PROCESSING 流水
+    service.configurePayment(cfg.payment.settle_delay_ms, cfg.payment.success_rate_percent);
+    scheduler.addRunEvery(cfg.payment.settle_interval_ms, [&service]() { service.settleDuePayments(); });
     scheduler.addRunEvery(60000, [&sessionMgr]() { sessionMgr->purgeExpired(hyperticket::nowMs()); });
 
     // 定期更新 metrics 资源指标

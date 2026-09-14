@@ -163,6 +163,14 @@ namespace hyperticket
             cfg.metrics.enabled = root["metrics"].isMember("enabled") ? root["metrics"]["enabled"].asBool() : cfg.metrics.enabled;
         }
 
+        if (root.isMember("payment"))
+        {
+            const Json::Value &payment = root["payment"];
+            cfg.payment.settle_delay_ms = getInt(payment, "settle_delay_ms", cfg.payment.settle_delay_ms);
+            cfg.payment.settle_interval_ms = getInt(payment, "settle_interval_ms", cfg.payment.settle_interval_ms);
+            cfg.payment.success_rate_percent = getInt(payment, "success_rate_percent", cfg.payment.success_rate_percent);
+        }
+
         // Overlay DB settings from .env (precedence: process env > .env > config.json).
         applyDbEnv(cfg, path);
         return cfg;

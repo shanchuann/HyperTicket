@@ -79,7 +79,7 @@ if (!error.empty()) {
 - `enabled: false` - 默认使用内存 SessionManager
 - `enabled: true` - 使用 Redis SessionManager（需要安装 hiredis）
 
-详见：[docs/REDIS_SESSION_GUIDE.md](../docs/REDIS_SESSION_GUIDE.md)
+详见：[docs/REDIS_SESSION_IMPLEMENTATION.md](../docs/REDIS_SESSION_IMPLEMENTATION.md)
 
 ### Metrics 配置（v1.1+）
 
@@ -169,5 +169,5 @@ Json::Value resp2 = hyperticket::makeError("CUSTOM_ERROR", "详细错误信息")
 - [../README.md](../README.md) - 项目概述
 - [../Server/README.md](../Server/README.md) - 服务端说明
 - [../Admin/README.md](../Admin/README.md) - 管理端说明
-- [../docs/REDIS_SESSION_GUIDE.md](../docs/REDIS_SESSION_GUIDE.md) - Redis Session 集成
+- [../docs/REDIS_SESSION_IMPLEMENTATION.md](../docs/REDIS_SESSION_IMPLEMENTATION.md) - Redis Session 集成
 - [../docs/PROMETHEUS_METRICS_GUIDE.md](../docs/PROMETHEUS_METRICS_GUIDE.md) - Metrics 集成

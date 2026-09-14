@@ -35,5 +35,10 @@
   "metrics": {
     "port": 8080,
     "enabled": false
+  },
+  "payment": {
+    "settle_delay_ms": 1000,
+    "settle_interval_ms": 500,
+    "success_rate_percent": 100
   }
 }

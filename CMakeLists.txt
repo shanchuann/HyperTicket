@@ -40,6 +40,7 @@ set(COMMON_SRC
 set(DOMAIN_SRC
 	backend/Domain/src/service/TicketService.cpp
 	backend/Domain/src/service/TicketServiceTxn.cpp
+	backend/Domain/src/service/TicketServicePay.cpp
 	backend/Domain/src/service/TicketServiceAdmin.cpp
 	backend/Domain/src/ServiceUtil.cpp
 )
@@ -59,6 +60,7 @@ set(SERVER_SRC
 	backend/Server/src/MetricsManager.cpp
 	backend/Server/src/RedisSessionManager.cpp
 	backend/Server/src/RedisConnPool.cpp
+	backend/Server/src/RedisStockCache.cpp
 	${DOMAIN_SRC}
 	backend/SqlConnPool/src/ConnectionPool.cpp
 	backend/ScheduledThreadPool/src/Timer.cpp
@@ -146,3 +148,20 @@ if(HIREDIS_LIB)
 	target_link_libraries(test_redis_session PRIVATE ${HIREDIS_LIB})
 endif()
 add_test(NAME test_redis_session COMMAND $<TARGET_FILE:test_redis_session>)
+
+add_executable(test_stock_cache
+	tests/test_stock_cache.cpp
+	backend/Server/src/RedisStockCache.cpp
+	backend/Server/src/RedisConnPool.cpp
+	${CHRONOLITE_SRC}
+)
+target_include_directories(test_stock_cache PRIVATE
+	backend/Server/include
+	backend/Domain/include
+	backend/ChronoLite/include
+)
+target_link_libraries(test_stock_cache PRIVATE ${JSONCPP_LIB} Threads::Threads)
+if(HIREDIS_LIB)
+	target_link_libraries(test_stock_cache PRIVATE ${HIREDIS_LIB})
+endif()
+add_test(NAME test_stock_cache COMMAND $<TARGET_FILE:test_stock_cache>)

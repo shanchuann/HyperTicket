@@ -1,5 +1,6 @@
 #include "../include/RedisConnPool.hpp"
 #include "../../ChronoLite/include/Logger.hpp"
+#include <chrono>
 #include <stdexcept>
 
 namespace hyperticket
@@ -118,14 +119,43 @@ namespace hyperticket
 
     redisContext *RedisConnPool::getConnection()
     {
-        std::unique_lock<std::mutex> lock(mutex_);
+        redisContext *ctx = nullptr;
+        {
+            std::unique_lock<std::mutex> lock(mutex_);
 
-        // 等待可用连接
-        cv_.wait(lock, [this]
-                 { return !connList_.empty(); });
+            // 限时等待可用连接：Redis 故障时不能让 worker 线程永久阻塞，
+            // 超时抛异常由上层捕获并降级（回退直查 DB / 拒绝请求）。
+            if (!cv_.wait_for(lock, std::chrono::milliseconds(kAcquireTimeoutMs),
+                              [this] { return !connList_.empty() || lostSlots_ > 0; }))
+            {
+                LOG_ERROR << "Redis connection pool exhausted (waited "
+                          << kAcquireTimeoutMs << "ms)";
+                throw std::runtime_error("Redis connection acquire timeout");
+            }
 
-        redisContext *ctx = connList_.front();
-        connList_.pop_front();
+            if (!connList_.empty())
+            {
+                ctx = connList_.front();
+                connList_.pop_front();
+            }
+            else
+            {
+                // 池中存在因故障丢失的名额：占用一个，锁外尝试重建连接
+                --lostSlots_;
+            }
+        } // 健康检查/重连/建连较慢，放到锁外做，避免阻塞其他 worker 取连接
+
+        if (!ctx)
+        {
+            ctx = createConnection();
+            if (!ctx)
+            {
+                std::lock_guard<std::mutex> lock(mutex_);
+                ++lostSlots_; // 归还名额，等 Redis 恢复后再补
+                throw std::runtime_error("Redis connection unavailable");
+            }
+            return ctx;
+        }
 
         // 健康检查
         if (!ping(ctx))
@@ -138,7 +168,15 @@ namespace hyperticket
                 ctx = createConnection();
                 if (!ctx)
                 {
-                    LOG_FATAL << "Failed to create new Redis connection";
+                    // 注意：不能用 LOG_FATAL（会 abort 整个进程），Redis 挂掉时
+                    // 抛异常让上层降级。登记 lostSlots_，后续 getConnection 在
+                    // 池空时会尝试补建连接，Redis 恢复后池自动回满。
+                    LOG_ERROR << "Failed to create new Redis connection";
+                    {
+                        std::lock_guard<std::mutex> lock(mutex_);
+                        ++lostSlots_;
+                    }
+                    cv_.notify_one();
                     throw std::runtime_error("Redis connection unavailable");
                 }
             }

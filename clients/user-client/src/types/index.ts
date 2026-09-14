@@ -91,6 +91,12 @@ export interface BackendOrder {
   use_date?: string;
   expire_at?: string;
   ticket_price?: number;
+  created_at?: string;
+  category?: string;
+  seat_label?: string;
+  seat_tier?: string;
+  seat_price?: number;
+  order_no?: string;
 }
 
 // 订单（前端展示用）
@@ -104,10 +110,32 @@ export interface Order {
   event_date: string;
   expire_at: string;
   ticket_price: number;
+  created_at: string;
+  category: string;
+  seat_label: string;
+  seat_tier: string;
+  seat_price: number;
+  order_no: string;
 }
 
 export interface ViewMyOrdersBackendResponse extends BackendResponse {
   arr?: BackendOrder[];
+}
+
+export interface Seat {
+  id: number;
+  label: string;
+  row: string;
+  col: number;
+  tier: 'VIP' | 'Standard' | 'Economy';
+  price: number;
+  status: 'AVAILABLE' | 'SOLD';
+}
+
+export interface ViewSeatsBackendResponse extends BackendResponse {
+  has_seats: boolean;
+  arr?: Seat[];
+  num?: number;
 }
 
 // 下单请求
@@ -174,5 +202,11 @@ export function normalizeOrder(o: BackendOrder): Order {
     event_date: o.use_date || '',
     expire_at: o.expire_at || '',
     ticket_price: o.ticket_price ?? 0,
+    created_at: o.created_at || '',
+    category: o.category || 'concert',
+    seat_label: o.seat_label || '',
+    seat_tier: o.seat_tier || '',
+    seat_price: o.seat_price ?? 0,
+    order_no: o.order_no || '',
   };
 }

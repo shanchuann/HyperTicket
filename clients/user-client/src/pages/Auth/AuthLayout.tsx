@@ -1,6 +1,7 @@
 import { Outlet, Link } from 'react-router-dom';
 import { Sun, Moon, Zap, Shield, Activity } from 'lucide-react';
 import { useTheme } from '../../hooks/useTheme';
+import catLogo from '../../assets/hyperticket-cat.png';
 import './AuthLayout.css';
 
 const AuthLayout = () => {
@@ -16,7 +17,7 @@ const AuthLayout = () => {
     <div className="auth-layout">
       <div className="auth-left">
         <header className="auth-header">
-          <Link to="/" className="auth-logo">HyperTicket</Link>
+          <Link to="/" className="auth-logo"><img src={catLogo} alt=""/><span>HyperTicket</span></Link>
           <button
             className="auth-theme-toggle"
             onClick={toggleTheme}

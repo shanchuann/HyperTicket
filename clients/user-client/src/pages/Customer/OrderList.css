@@ -95,7 +95,10 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-4);
+  transition: border-color var(--duration-fast) var(--ease-out-quart), transform var(--duration-fast) var(--ease-out-quart);
 }
+
+.order-card:hover { border-color: var(--color-primary); transform: translateY(-2px); }
 
 .order-header {
   display: flex;
@@ -188,6 +191,9 @@
   cursor: pointer;
   transition: all var(--duration-fast) var(--ease-out-quart);
 }
+
+.order-btn:hover:not(:disabled) { transform: translateY(-1px); }
+.order-btn:active:not(:disabled) { transform: translateY(0); }
 
 .order-btn-secondary {
   background: var(--color-bg);

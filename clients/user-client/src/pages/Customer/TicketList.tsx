@@ -1,8 +1,11 @@
 import { useState, useEffect } from 'react';
-import { Search, Calendar, MapPin, ChevronRight, Sparkles } from 'lucide-react';
+import { Search, Calendar, MapPin, ChevronRight, Sparkles, Heart, Minus, Plus } from 'lucide-react';
 import { ticketApi } from '../../api/tickets';
 import { orderApi } from '../../api/orders';
+import { toChineseError } from '../../api/errors';
 import type { Ticket } from '../../types';
+import Toast from '../../components/Toast';
+import SeatPicker from '../../components/SeatPicker';
 import './TicketList.css';
 
 const TicketList = () => {
@@ -10,8 +13,11 @@ const TicketList = () => {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [orderingId, setOrderingId] = useState<number | null>(null);
+  const [quantities, setQuantities] = useState<Record<number, number>>({});
+  const [favoriteIds, setFavoriteIds] = useState<Set<number>>(new Set());
   const [orderMsg, setOrderMsg] = useState('');
+  const [orderSucceeded, setOrderSucceeded] = useState(false);
+  const [selectedTicket, setSelectedTicket] = useState<Ticket | null>(null);
   const [city, setCity] = useState('');
   const [category, setCategory] = useState('');
   const [cities, setCities] = useState<string[]>([]);
@@ -32,7 +38,7 @@ const TicketList = () => {
       const data = await ticketApi.getTickets({ city: ct, category: cat });
       setTickets(data);
     } catch (err) {
-      setLoadError(err instanceof Error ? err.message : '加载票务失败，请重试');
+      setLoadError(toChineseError(err, '加载票务失败，请重试'));
     } finally {
       setLoading(false);
     }
@@ -43,32 +49,39 @@ const TicketList = () => {
     ticketApi.getTickets().then(data => {
       setCities([...new Set(data.map(t => t.city).filter(Boolean))]);
     }).catch(() => {});
-    loadTickets('', '');
+    const token = localStorage.getItem('token');
+    if (token) {
+      ticketApi.getFavorites(token).then(items => setFavoriteIds(new Set(items.map(item => item.id)))).catch(() => {});
+      orderApi.resumePendingOrder(token).then(result => {
+        if (result?.order_status === 'PENDING') {
+          setOrderSucceeded(true);
+          setOrderMsg('上次排队订单已锁定库存，请到“我的订单”完成支付');
+        }
+      }).catch(err => {
+        setOrderSucceeded(false);
+        setOrderMsg(toChineseError(err, '上次订单状态查询失败'));
+      });
+    }
   }, []);
 
   useEffect(() => { loadTickets(city, category); }, [city, category]);
 
-  const handleOrder = async (ticket: Ticket) => {
-    const token = localStorage.getItem('token');
-    if (!token) {
+  const beginOrder = (ticket: Ticket) => {
+    if (!localStorage.getItem('token')) {
+      setOrderSucceeded(false);
       setOrderMsg('请先登录');
       return;
     }
-    setOrderingId(ticket.id);
-    setOrderMsg('');
-    try {
-      const resp = await orderApi.createOrder(token, ticket.id);
-      setOrderMsg(resp.order_status === 'PENDING'
-        ? `已锁定「${ticket.title}」，请到“我的订单”在 15 分钟内完成支付`
-        : `成功预订「${ticket.title}」`);
-      // 刷新票务列表更新剩余数量
-      const data = await ticketApi.getTickets();
-      setTickets(data);
-    } catch (err) {
-      setOrderMsg(err instanceof Error ? err.message : '预订失败');
-    } finally {
-      setOrderingId(null);
-    }
+    setSelectedTicket(ticket);
+  };
+
+  const toggleFavorite = async (ticket: Ticket) => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    const active = favoriteIds.has(ticket.id);
+    setFavoriteIds(prev => { const next = new Set(prev); active ? next.delete(ticket.id) : next.add(ticket.id); return next; });
+    try { await ticketApi.favorite(token, ticket.id, active ? 'remove' : 'add'); }
+    catch { setFavoriteIds(prev => { const next = new Set(prev); active ? next.add(ticket.id) : next.delete(ticket.id); return next; }); }
   };
 
   const filteredTickets = tickets.filter(ticket => {
@@ -99,6 +112,24 @@ const TicketList = () => {
 
   return (
     <div className="ticket-list-container">
+      <Toast
+        message={loadError || orderMsg}
+        tone={loadError || !orderSucceeded ? 'error' : 'success'}
+        onClose={() => loadError ? setLoadError('') : setOrderMsg('')}
+        actionLabel={loadError ? '重新加载' : undefined}
+        onAction={loadError ? () => void loadTickets() : undefined}
+      />
+      {selectedTicket && <SeatPicker
+        ticket={selectedTicket}
+        quantity={quantities[selectedTicket.id] ?? 1}
+        onClose={() => setSelectedTicket(null)}
+        onSuccess={message => {
+          setOrderSucceeded(true);
+          setOrderMsg(message);
+          void loadTickets();
+        }}
+        onError={message => { setOrderSucceeded(false); setOrderMsg(message); }}
+      />}
       <div className="ticket-list-header">
         <div className="ticket-list-heading-row">
           <div>
@@ -111,22 +142,6 @@ const TicketList = () => {
             <span>场可预订</span>
           </div>
         </div>
-
-        {loadError && (
-          <div className="order-msg error">
-            {loadError}
-            <button
-              style={{ marginLeft: '12px', cursor: 'pointer', background: 'none', border: 'none', color: 'inherit', textDecoration: 'underline' }}
-              onClick={() => loadTickets()}
-            >重试</button>
-          </div>
-        )}
-
-        {orderMsg && (
-          <div className={`order-msg ${orderMsg.includes('成功') ? 'success' : 'error'}`}>
-            {orderMsg}
-          </div>
-        )}
 
         <div className="ticket-list-filters">
           <div className="ticket-search">
@@ -176,6 +191,9 @@ const TicketList = () => {
                 <Calendar size={14} />
                 {formatDate(ticket.event_date)}
               </span>
+              <button className={`ticket-favorite ${favoriteIds.has(ticket.id) ? 'active' : ''}`} aria-label={favoriteIds.has(ticket.id) ? '取消收藏' : '收藏票务'} onClick={() => toggleFavorite(ticket)}>
+                <Heart size={17} fill={favoriteIds.has(ticket.id) ? 'currentColor' : 'none'} />
+              </button>
             </div>
 
             <h3 className="ticket-title">{ticket.title}</h3>
@@ -190,9 +208,9 @@ const TicketList = () => {
                 <div
                   className="ticket-seats-fill"
                   style={{
-                    width: ticket.total_seats > 0
-                      ? `${((ticket.total_seats - ticket.available_seats) / ticket.total_seats) * 100}%`
-                      : '0%'
+                    transform: `scaleX(${ticket.total_seats > 0
+                      ? (ticket.total_seats - ticket.available_seats) / ticket.total_seats
+                      : 0})`
                   }}
                 />
               </div>
@@ -207,14 +225,16 @@ const TicketList = () => {
                 <span className="ticket-price-value">{ticket.price}</span>
                 <span className="ticket-price-unit">起</span>
               </div>
-              <button
-                className="ticket-action"
-                disabled={ticket.available_seats <= 0 || orderingId === ticket.id}
-                onClick={() => handleOrder(ticket)}
-              >
-                {orderingId === ticket.id ? '预订中...' : (ticket.available_seats <= 0 ? '已售罄' : '预订')}
-                {orderingId !== ticket.id && ticket.available_seats > 0 && <ChevronRight size={16} />}
-              </button>
+              <div className="ticket-purchase">
+                <div className="quantity-stepper" aria-label="购票数量">
+                  <button aria-label="减少数量" disabled={(quantities[ticket.id] ?? 1) <= 1} onClick={() => setQuantities(q => ({...q, [ticket.id]: Math.max(1, (q[ticket.id] ?? 1) - 1)}))}><Minus size={14}/></button>
+                  <span>{quantities[ticket.id] ?? 1}</span>
+                  <button aria-label="增加数量" disabled={(quantities[ticket.id] ?? 1) >= Math.min(6, ticket.available_seats)} onClick={() => setQuantities(q => ({...q, [ticket.id]: Math.min(6, ticket.available_seats, (q[ticket.id] ?? 1) + 1)}))}><Plus size={14}/></button>
+                </div>
+                <button className="ticket-action" disabled={ticket.available_seats <= 0} onClick={() => beginOrder(ticket)}>
+                  {ticket.available_seats <= 0 ? '已售罄' : '选座预订'} {ticket.available_seats > 0 && <ChevronRight size={16} />}
+                </button>
+              </div>
             </div>
           </div>
         ))}

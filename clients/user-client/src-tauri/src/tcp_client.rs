@@ -60,7 +60,7 @@ impl TcpClient {
         Ok(response.trim().to_string())
     }
 
-    pub fn is_connected(&self) -> bool {
-        self.stream.is_some()
+    pub fn check_connection(&mut self) -> bool {
+        self.ensure_connected().is_ok()
     }
 }

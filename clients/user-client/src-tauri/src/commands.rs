@@ -19,5 +19,5 @@ pub fn send_request(
 
 #[tauri::command]
 pub fn check_connection(client: State<'_, Mutex<TcpClient>>) -> bool {
-    client.lock().map(|c| c.is_connected()).unwrap_or(false)
+    client.lock().map(|mut c| c.check_connection()).unwrap_or(false)
 }

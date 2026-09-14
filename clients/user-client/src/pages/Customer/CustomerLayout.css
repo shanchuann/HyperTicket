@@ -47,16 +47,14 @@
 }
 
 .customer-logo-mark {
-  display: grid;
-  place-items: center;
   width: 30px;
   height: 30px;
   border-radius: var(--radius-md);
-  background: var(--color-primary);
-  color: white;
-  font-family: var(--font-mono);
-  font-size: 1rem;
+  object-fit: cover;
+  transition: transform var(--duration-fast) var(--ease-out-quart);
 }
+
+.customer-logo:hover .customer-logo-mark { transform: rotate(-4deg) scale(1.04); }
 
 /* Navigation */
 .customer-nav {
@@ -77,12 +75,14 @@
   font-size: var(--text-body);
   font-weight: var(--weight-medium);
   transition: color var(--duration-fast) var(--ease-out-quart),
-              background-color var(--duration-fast) var(--ease-out-quart);
+              background-color var(--duration-fast) var(--ease-out-quart),
+              transform var(--duration-fast) var(--ease-out-quart);
 }
 
 .customer-nav-item:hover {
   color: var(--color-text-primary);
   background: var(--color-bg);
+  transform: translateY(-1px);
 }
 
 .customer-nav-item.active {
@@ -139,7 +139,10 @@
   display: flex;
   flex-direction: column;
   gap: var(--space-6);
+  animation: mobile-menu-in var(--duration-fast) var(--ease-out-expo);
 }
+
+@keyframes mobile-menu-in { from { opacity: 0; transform: translateY(-8px); } }
 
 .customer-mobile-nav {
   display: flex;

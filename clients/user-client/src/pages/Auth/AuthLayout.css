@@ -25,11 +25,20 @@
 }
 
 .auth-logo {
-  font-family: var(--font-display);
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
   font-size: var(--text-h3);
   font-weight: var(--weight-bold);
   color: var(--color-primary);
   text-decoration: none;
+}
+
+.auth-logo img {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-md);
+  object-fit: cover;
 }
 
 .auth-theme-toggle {
@@ -65,23 +74,12 @@
   overflow: hidden;
 }
 
-.auth-right::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    135deg,
-    transparent 0%,
-    oklch(1 0 0 / 0.1) 50%,
-    transparent 100%
-  );
-}
-
 .auth-illustration {
   position: relative;
   z-index: 1;
   text-align: center;
   max-width: 480px;
+  animation: auth-enter var(--duration-normal) var(--ease-out-expo);
 }
 
 .auth-illustration h2 {
@@ -119,7 +117,12 @@
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
+  transition: transform var(--duration-fast) var(--ease-out-quart), background-color var(--duration-fast) var(--ease-out-quart);
 }
+
+.auth-feature:hover .auth-feature-icon { transform: translateY(-2px); background: oklch(1 0 0 / .28); }
+
+@keyframes auth-enter { from { opacity: 0; transform: translateY(10px); } }
 
 .auth-feature-text h3 {
   font-size: var(--text-body);

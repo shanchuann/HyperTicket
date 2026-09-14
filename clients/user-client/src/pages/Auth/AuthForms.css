@@ -3,6 +3,7 @@
 .auth-form-container {
   width: 100%;
   max-width: 400px;
+  animation: auth-form-in var(--duration-normal) var(--ease-out-expo);
 }
 
 .auth-form-title {
@@ -109,6 +110,7 @@
 
 .form-input-suffix:hover {
   color: var(--color-text-secondary);
+  transform: scale(1.06);
 }
 
 .form-error {
@@ -239,6 +241,7 @@ input[type="password"]::-webkit-contacts-auto-fill-button {
 
 .form-submit:hover:not(:disabled) {
   background: var(--color-primary-hover);
+  transform: translateY(-1px);
 }
 
 .form-submit:active:not(:disabled) {
@@ -263,6 +266,10 @@ input[type="password"]::-webkit-contacts-auto-fill-button {
   to {
     transform: rotate(360deg);
   }
+}
+
+@keyframes auth-form-in {
+  from { opacity: 0; transform: translateY(10px); }
 }
 
 /* Form Footer */

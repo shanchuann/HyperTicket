@@ -1,22 +1,11 @@
 import { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { Eye, EyeOff, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, Loader2, LogIn } from 'lucide-react';
 import { authApi } from '../../api/auth';
+import { toChineseError } from '../../api/errors';
 import { useAuth } from '../../hooks/useAuth';
+import Toast from '../../components/Toast';
 import './AuthForms.css';
-
-const errorMessages: Record<string, string> = {
-  INVALID_CREDENTIALS: '手机号或密码错误',
-  USER_NOT_FOUND: '手机号或密码错误',
-  PASSWD_ERROR: '手机号或密码错误',
-  BLACKLISTED: '该账号已被禁用，请联系管理员',
-  UNAUTHORIZED: '登录已过期，请重新登录',
-  DB_UNAVAILABLE: '服务暂时不可用，请稍后再试',
-  RATE_LIMITED: '操作过于频繁，请稍后再试',
-};
-
-const translateError = (message: string) =>
-  errorMessages[message] ?? message;
 
 const Login = () => {
   const navigate = useNavigate();
@@ -63,7 +52,7 @@ const Login = () => {
       login({ tel: formData.tel, username: response.username || '用户', token }, token);
       navigate('/customer');
     } catch (error) {
-      setAuthError(translateError(error instanceof Error ? error.message : '手机号或密码错误，请重试'));
+      setAuthError(toChineseError(error, '手机号或密码错误，请重试'));
     } finally {
       setIsLoading(false);
     }
@@ -82,14 +71,9 @@ const Login = () => {
 
   return (
     <div className="auth-form-container">
+      <Toast message={authError} tone="error" onClose={() => setAuthError('')} />
       <h1 className="auth-form-title">欢迎回来</h1>
       <p className="auth-form-subtitle">登录您的 HyperTicket 账号</p>
-
-      {authError && (
-        <div className="auth-error" role="alert">
-          {authError}
-        </div>
-      )}
 
       <form className="auth-form" onSubmit={handleSubmit} noValidate>
         <div className="form-group">
@@ -168,7 +152,7 @@ const Login = () => {
               登录中
             </>
           ) : (
-            '登录'
+            <><LogIn size={18} />登录</>
           )}
         </button>
       </form>

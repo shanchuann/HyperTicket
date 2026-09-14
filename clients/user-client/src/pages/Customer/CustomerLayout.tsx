@@ -4,6 +4,7 @@ import { Sun, Moon, Ticket, ShoppingBag, LogOut, Menu, X } from 'lucide-react';
 import { useTheme } from '../../hooks/useTheme';
 import { useAuth } from '../../hooks/useAuth';
 import ConnectionStatus from '../../components/ConnectionStatus';
+import catLogo from '../../assets/hyperticket-cat.png';
 import './CustomerLayout.css';
 
 const CustomerLayout = () => {
@@ -18,7 +19,7 @@ const CustomerLayout = () => {
     const handleScroll = () => {
       setScrolled(window.scrollY > 10);
     };
-    window.addEventListener('scroll', handleScroll);
+    window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
@@ -42,7 +43,7 @@ const CustomerLayout = () => {
       <header className={`customer-header ${scrolled ? 'scrolled' : ''}`}>
         <div className="customer-header-container">
           <Link to="/customer" className="customer-logo">
-            <span className="customer-logo-mark" aria-hidden="true">H</span>
+            <img className="customer-logo-mark" src={catLogo} alt="" />
             <span>HyperTicket</span>
           </Link>
 

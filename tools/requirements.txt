@@ -1,0 +1,2 @@
+# log_ai_detector 与 doc_qa 仅使用 Python 3.10+ 标准库，无外部依赖。
+# This file exists to make that explicit for reproducibility.

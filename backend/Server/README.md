@@ -35,7 +35,7 @@ HyperTicket 服务端程序，基于自研 Inet Reactor 网络库实现高并发
 
 **生产环境要求**: 需安装 hiredis 库
 
-**详细文档**: [docs/REDIS_SESSION_GUIDE.md](../docs/REDIS_SESSION_GUIDE.md)
+**详细文档**: [docs/REDIS_SESSION_IMPLEMENTATION.md](../docs/REDIS_SESSION_IMPLEMENTATION.md)
 
 ### 2. Metrics Manager
 
@@ -260,7 +260,6 @@ cmake -S . -B build && cmake --build build -j
 ## 参考文档
 
 - [../README.md](../README.md) - 项目总览
-- [../QUICKSTART.md](../QUICKSTART.md) - 快速开始
-- [../docs/REDIS_SESSION_GUIDE.md](../docs/REDIS_SESSION_GUIDE.md) - Redis Session 指南
+- [../DESIGN.md](../DESIGN.md) - 前端设计系统
+- [../docs/REDIS_SESSION_IMPLEMENTATION.md](../docs/REDIS_SESSION_IMPLEMENTATION.md) - Redis Session 指南
 - [../docs/PROMETHEUS_METRICS_GUIDE.md](../docs/PROMETHEUS_METRICS_GUIDE.md) - 监控指南
-- [../docs/MULTITHREAD_FIX.md](../docs/MULTITHREAD_FIX.md) - 多线程修复说明

@@ -1,0 +1,15 @@
+[Unit]
+Description=HyperTicket Log AI Detector
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/shanchuan/HyperTicket
+ExecStart=/home/shanchuan/HyperTicket/scripts/log-ai-detector
+Restart=always
+RestartSec=5
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

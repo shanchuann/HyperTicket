@@ -34,9 +34,22 @@ logs/
 config.json
 .env
 
+# Local AI log detector runtime state/index
+.codegraph/
+.log-ai-detector-state.json
+.log-ai-detector.pid
+.log-ai-detector-model
+.doc-qa-model
+reports/log-ai-detector/
+tools/log-ai-detector-ui/dist/
+tools/doc-qa-ui/dist/
+__pycache__/
+
 # Node.js
 node_modules/
 frontend/dist/
+clients/user-client/dist/
+*.tsbuildinfo
 
 # Local IDE/agent configs
 .agents/

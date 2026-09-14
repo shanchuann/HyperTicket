@@ -125,7 +125,7 @@ Both `config.json` and `.env` are gitignored. Use `config.example.json` and `.en
 - Set `redis.enabled: true` in config.json to enable
 - Requires hiredis library installation for production use
 - Current implementation uses file-based placeholder for development
-- See `docs/REDIS_SESSION_GUIDE.md` for full integration
+- See `docs/REDIS_SESSION_IMPLEMENTATION.md` for full integration
 
 **Metrics Manager** (disabled by default):
 - Set `metrics.enabled: true` in config.json to enable
@@ -193,10 +193,12 @@ docker-compose logs -f hyperticket
 ## Documentation
 
 - `README.md`: Full project documentation
-- `QUICKSTART.md`: Deployment guide with Docker and health checks
-- `docs/MULTITHREAD_FIX.md`: Multi-IO thread race condition details
-- `docs/REDIS_SESSION_GUIDE.md`: Redis session persistence design (Phase 2)
-- `docs/PROMETHEUS_METRICS_GUIDE.md`: Metrics integration design (Phase 2)
+- `DESIGN.md`: Frontend design system (color, typography, spacing, motion)
+- `PRODUCT.md`: Product requirements and brand positioning
+- `docs/V2_FEATURES.md`: v2 feature upgrade (detail page, search filters, pending-payment flow, favorites, hot list)
+- `docs/WEBSOCKET_INTEGRATION.md`: WebSocket bridge integration guide
+- `docs/PROMETHEUS_METRICS_GUIDE.md`: Prometheus + Grafana monitoring
+- `docs/REDIS_SESSION_IMPLEMENTATION.md`: Redis session persistence
 - Each module has its own `README.md` (e.g., `Inet/README.md`, `Server/README.md`)
 
 ## Common Development Tasks

@@ -407,6 +407,7 @@ int main()
     logsys::AsynLogging asyncLogger("logs/hyperticket.client", 16 * 1024 * 1024, 3);
     logsys::Logger::SetOuput([&asyncLogger](const std::string &msg) { asyncLogger.append(msg); });
     logsys::Logger::SetFlush([&asyncLogger]() { asyncLogger.flush(); });
+    logsys::Logger::SetFatal([&asyncLogger]() { asyncLogger.stop(); }); // FATAL 前停止后台线程
     logsys::Logger::SetLogLevel(logsys::LOG_LEVEL::INFO);
     asyncLogger.start();
 

@@ -1,540 +1,774 @@
 # HyperTicket 高性能票务预约系统
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen)]()
 [![C++17](https://img.shields.io/badge/C%2B%2B-17-blue)]()
-[![License](https://img.shields.io/badge/license-MIT-green)]()
-[![Production Ready](https://img.shields.io/badge/production-ready-success)]()
+[![Qt6](https://img.shields.io/badge/Qt-6-green)]()
+[![React](https://img.shields.io/badge/React-18-61dafb)]()
+[![Tauri](https://img.shields.io/badge/Tauri-2-ffc131)]()
+[![License: MIT](https://img.shields.io/badge/license-MIT-green)]()
 
-## 项目概述
+基于 **C++17** 实现的企业级高性能票务管理系统，支持全平台多端访问。
 
-一个基于 C++17 实现的企业级高性能票务管理系统，提供以下核心功能：
-- **用户端**：注册/登录、票务查询、在线预订、订单管理、取消预订
-- **服务端**：高并发请求处理、数据库交互、事务管理、会话管理、限流保护、Prometheus Metrics 暴露、健康检查
-- **管理端**：直接数据库操作、票务管理、用户状态管控、黑名单机制
+- **C++ 服务器**：自研 epoll Reactor 网络库，主从多线程模型
+- **CLI 客户端**：终端交互式命令行工具
+- **Web 前端**：React + TypeScript，含营销落地页、用户端、管理后台
+- **桌面客户端**：Qt6 QML (管理员) + Tauri 2 (用户端)
+- **部署**：Docker 容器化，可选 Prometheus + Grafana 监控
+
+---
+
+## 快速开始
+
+### 1. 环境准备
+
+```bash
+# 依赖安装（Ubuntu/Debian）
+sudo apt install libjsoncpp-dev libmysqlclient-dev build-essential cmake
+```
+
+### 2. 编译 C++ 后端
+
+```bash
+# 构建所有 C++ 可执行文件（ser / client / admin）
+mkdir -p build && cd build
+cmake ..
+cmake --build . --target all -j$(nproc)
+
+# 可执行文件输出到项目根目录的 bin/
+cd ..
+# bin/ser       - 服务器
+# bin/client    - CLI 客户端
+# bin/admin     - 管理员命令行工具
+```
+
+### 3. 配置数据库
+
+```bash
+# 创建数据库和表结构
+mysql -u root -p < db/init.sql
+
+# 复制配置模板并编辑
+cp config.example.json config.json
+# 编辑 config.json，填入数据库密码等配置
+```
+
+### 4. 启动服务
+
+**方式 A — 直接启动（开发/测试）**
+
+```bash
+# 终端 1: 启动服务器
+./bin/ser
+
+# 终端 2: 启动 CLI 客户端
+./bin/client
+
+# 终端 3: 启动管理员工具
+./bin/admin
+```
+
+后台运行（不占用终端）：
+
+```bash
+./bin/ser > logs/ser.log 2>&1 &
+```
+
+**方式 B — Docker 容器化（生产）**
+
+```bash
+# 全栈启动（含 MySQL + Redis）
+docker-compose up -d
+
+# 带监控启动（含 Prometheus + Grafana）
+docker-compose --profile monitoring up -d
+```
+
+### 5. 启动 Web 前端
+
+```bash
+# 步骤一：启动后端服务（见第 4 步）
+
+# 步骤二：启动 WebSocket 桥接服务器
+cd websocket-bridge
+npm install     # 首次需要
+npm start       # 监听 ws://localhost:8080
+
+# 步骤三：启动前端开发服务器
+cd ../frontend
+npm install     # 首次需要
+npm run dev     # 访问 http://localhost:3000
+```
+
+一键启动脚本：
+
+```bash
+./scripts/start-frontend.sh
+```
+
+### 6. 启动桌面客户端
+
+见下方 [桌面客户端](#桌面客户端) 章节。
+
+---
+
+## 系统架构
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                            客户端层                                      │
+│  ┌──────────┐  ┌─────────────┐  ┌───────────┐  ┌───────────┐            │
+│  │ CLI 终端  │  │ Qt6 管理端  │  │ React Web │  │ Tauri 桌面│            │
+│  │ (C++ TCP) │  │ (C++ + QML)│  │(WebSocket)│  │ (Rust TCP)│            │
+│  └─────┬─────┘  └──────┬─────┘  └─────┬─────┘  └─────┬─────┘            │
+│        │               │               │               │                │
+│        │    TCP        │    TCP        │  WebSocket    │    TCP         │
+│        │    :7000      │    :7000      │  :8080        │    :7000       │
+│        ▼               ▼               ▼               ▼                │
+│                                  ┌──────────┐                           │
+│                                  │ 桥接服务  │                           │
+│                                  │ (Node.js)│                           │
+│                                  └─────┬────┘                           │
+└────────────────────────────────────────┼────────────────────────────────┘
+                                         │ TCP :7000
+                                         ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                            服务端层                                      │
+│  ┌────────────────── Inet 网络库 (epoll Reactor) ─────────────────────┐  │
+│  │  Acceptor → EventLoopThreadPool (IO 线程) → 拆包、限流、分发        │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                  │                                      │
+│                                  ▼                                      │
+│  ┌─────────── FixedThreadPool (业务线程池) ───────────────────────────┐  │
+│  │  TicketService::handleRequest → Repository → MySQL                │  │
+│  │  事务管理 (SELECT ... FOR UPDATE 防超卖)                           │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+│                                  │                                      │
+│                                  ▼                                      │
+│  ┌───────────────────────────────────────────────────────────────────┐  │
+│  │  SqlConnPool (连接池) │ SessionManager (Token) │ ChronoLite (日志) │  │
+│  │  ScheduledThreadPool (定时任务) │ RateLimiter (限流)               │  │
+│  └───────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────┘
+                                  │
+                                  ▼
+┌─────────────────────────────────────────────────────────────────────────┐
+│                             数据层                                      │
+│  ┌──────────┐  ┌──────────┐                                             │
+│  │  MySQL 8 │  │  Redis 7 │ (可选 Session 持久化)                        │
+│  └──────────┘  └──────────┘                                             │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+### 请求处理链路
+
+1. **IO 线程** (Inet TcpServer)：epoll 事件循环 → 按 `\n` 拆包 → JSON 解析 → RateLimiter 限流
+2. **业务线程** (FixedThreadPool)：`TicketService::handleRequest` 按 `type` 分发
+3. **数据库**：`SqlConnPool` 借连接 → `MysqlStmt` 预处理语句 → 事务处理
+4. **响应**：JSON 序列化写回 `TcpConnection`
+
+---
 
 ## 核心特性
 
 ### 高性能
-- 主从 Reactor 网络模型（epoll）
-- 多 IO 线程 + 业务线程池
-- 连接池 + 预处理语句
-- 异步日志（双缓冲）
+- 主从 Reactor 网络模型（epoll），one loop per thread
+- IO 线程 + FixedThreadPool 业务线程池分离
+- SqlConnPool 连接池 + MysqlStmt 预处理语句
+- ChronoLite 异步日志（双缓冲 + 后台线程）
+- QPS > 10,000（8 worker），P99 < 100ms
 
 ### 高可用
-- Token 会话管理（支持 Redis 持久化）
-- 连接限流 + 频率限制
-- 事务保证（防超卖）
-- 健康检查端点
+- Token 会话管理（30 分钟滑动过期，支持 Redis 持久化）
+- 令牌桶限流（连接级）+ 全局连接上限
+- `SELECT ... FOR UPDATE` 事务防超卖
+- 健康检查端点（数据库、磁盘、内存）
 
-### 可观测
-- Prometheus Metrics 监控
-- 结构化日志
-- 审计追踪
-- 实时统计
+### 安全防护
+- **SQL 注入防御**：所有查询使用 `mysql_stmt_*` 参数化绑定
+- **会话鉴权**：服务端签发随机 32 字节 token，不信任客户端自报身份
+- **密码安全**：bcrypt 带盐哈希，支持旧密码自动迁移
+- **连接保护**：最大连接数 + 单连接频率限制
 
-### 企业级
-- Docker 容器化部署
-- Kubernetes 就绪
-- 水平扩展支持（Redis Session）
-- 完整文档
+### 可观测性
+- Prometheus Metrics：QPS、延迟、订单数、活跃会话、错误率
+- 结构化异步日志 + 审计追踪表
+- 定时统计输出
 
-## 技术栈全景
+---
 
-### 1. 核心语言
-- **C++17**：作为系统主要开发语言
-- **SQL**：用于数据库操作
+## 技术栈
 
-### 2. 网络架构
-| 组件        | 技术方案                 | 说明                          |
-|------------|-------------------------|-----------------------------|
-| 通信协议    | TCP/IP                  | 可靠传输，按 `\n` 分隔 JSON 行 |
-| 并发模型    | Inet 主从 Reactor（epoll）| one loop per thread，多 IO 线程 + 业务线程池 |
-| 数据序列化  | JSON（jsoncpp库）        | 请求/响应结构化数据交换        |
+### C++ 后端组件
 
-### 3. 自研基础组件
-| 模块 | 作用 | 状态 |
+所有后端模块位于 `backend/` 目录：
+
+| 模块 | 说明 | 文档 |
 |------|------|------|
-| [Inet](backend/Inet/README.md) | 基于 epoll 的 Reactor 网络库 | 稳定 |
-| [ChronoLite](backend/ChronoLite/README.md) | 异步日志（双缓冲 + 后台线程） | 稳定 |
-| [FixedThreadPool](backend/FixedThreadPool/README.md) | 固定大小业务工作线程池 | 稳定 |
+| [Inet](backend/Inet/README.md) | 基于 epoll 的 Reactor 网络库，muduo 风格 one loop per thread | 稳定 |
+| [ChronoLite](backend/ChronoLite/README.md) | 异步日志（双缓冲 + 后台线程），微秒级时间戳 | 稳定 |
+| [FixedThreadPool](backend/FixedThreadPool/README.md) | 固定大小业务线程池 + 有界阻塞队列 | 稳定 |
 | [ScheduledThreadPool](backend/ScheduledThreadPool/README.md) | 定时任务（会话清理、票务巡检、统计） | 稳定 |
-| [SqlConnPool](backend/SqlConnPool/README.md) | MySQL 连接池（带健康检查） | 稳定 |
-| [Common](backend/Common/README.md) | 统一配置加载 `AppConfig` | 稳定 |
-| [Domain](backend/Domain/) | 领域层（Service + Repository） | 稳定 |
+| [SqlConnPool](backend/SqlConnPool/README.md) | MySQL 连接池（单例，信号量阻塞等待，健康检查） | 稳定 |
+| [Common](backend/Common/README.md) | AppConfig 统一配置加载（config.json + .env + 环境变量） | 稳定 |
+| [Domain](backend/Domain/) | 领域层 — TicketService + Repository 接口 | 稳定 |
+| [Server](backend/Server/README.md) | 服务端主程序（ser），含 SessionManager、MetricsManager 等 | 稳定 |
 
-### 4. 企业级功能（可选）
-| 功能 | 说明 | 状态 |
+### 前端/客户端技术栈
+
+| 技术 | 用途 | 客户端 |
+|------|------|--------|
+| React 19 + TypeScript + Vite | Web 前端框架 | Web 用户端、营销页、管理后台 |
+| React Router 7 | 客户端路由 | Web 前端 |
+| Framer Motion + Lucide React | 动画 + 图标 | Web 前端 |
+| Qt 6 + QML + Material Design 3 | 桌面 UI 框架 | Qt6 管理端 |
+| Tauri 2 + Rust | 桌面/移动应用框架 | Tauri 用户端 |
+| Node.js + ws | WebSocket ↔ TCP 桥接 | 桥接服务器 |
+
+---
+
+## 客户端列表
+
+HyperTicket 提供 5 种客户端接入方式：
+
+### 1. CLI 客户端（C++）
+
+终端交互式命令行工具，最轻量的接入方式。
+
+```bash
+# 编译
+cmake -S . -B build && cmake --build build -j$(nproc)
+
+# 运行
+./bin/client
+```
+
+功能：注册、登录、票务浏览、下单、查看订单、取消订单。
+
+### 2. Qt6 QML 管理端（桌面）
+
+基于 Qt 6 + QML 的图形化管理员工具，Material Design 3 风格，直连后端 TCP。
+
+```bash
+# 安装 Qt6 依赖
+sudo apt install qt6-base-dev qt6-declarative-dev qt6-tools-dev \
+  qml6-module-qtquick-controls qml6-module-qtquick-layouts \
+  qml6-module-qtquick-window libqt6svg6-dev
+
+# 编译
+cd clients/admin-client
+cmake -B build && cmake --build build -j$(nproc)
+
+# 运行
+./build/bin/HyperTicketAdmin
+```
+
+详见 [clients/README.md](clients/README.md)
+
+### 3. Web 前端（React）
+
+React + TypeScript 现代 Web 界面，包含营销落地页、用户端、管理后台。
+
+```bash
+# 启动后端 (./bin/ser) + 桥接服务器 + 前端
+cd websocket-bridge && npm install && npm start &
+cd ../frontend && npm install && npm run dev
+
+# 或一键启动
+./scripts/start-frontend.sh
+```
+
+页面路由：
+
+| 路径 | 页面 | 说明 |
 |------|------|------|
-| Redis Session | Session 持久化，支持多实例部署 | 接口完成 |
-| Prometheus Metrics | 监控指标暴露（QPS、延迟、错误率） | 可用 |
-| 健康检查 | `/health` 端点（数据库、磁盘、内存） | 可用 |
-| Docker 部署 | 容器化 + docker-compose | 可用 |
+| `/` | 营销落地页 | 品牌展示、功能介绍 |
+| `/auth/login` | 登录 | 手机号 + 密码 / token |
+| `/auth/register` | 注册 | 新用户注册 |
+| `/customer` | 票务浏览 | 搜索、筛选、预订 |
+| `/customer/orders` | 我的订单 | 订单列表、取消 |
+| `/admin` | 管理仪表盘 | 数据统计 |
+| `/admin/tickets` | 票务管理 | 增删改查 |
 
-### 5. 前端技术栈
-| 技术 | 用途 | 版本 |
-|------|------|------|
-| **React 18** | UI 框架 | ^18.x |
-| **TypeScript** | 类型安全 | ^5.x |
-| **Vite** | 构建工具 | ^5.x |
-| **React Router** | 客户端路由 | ^6.x |
-| **Framer Motion** | 动画库 | ^11.x |
-| **Lucide React** | 图标库 | ^0.x |
+详见 [frontend/README.md](frontend/README.md) | [DESIGN.md](DESIGN.md)（设计系统）
 
-前端目录: [`frontend/`](frontend/)
+### 4. Tauri 2 用户端（桌面 + Android）
 
-### 6. 数据库系统
-- **MySQL 8.0+**：关系型数据库存储
-- **Redis 7+**（可选）：Session 持久化
+Rust + React + TypeScript 的桌面和 Android 客户端，Rust 层直连后端 TCP（无需 WebSocket 桥接）。
+
+```bash
+cd clients/user-client
+npm install
+cargo install tauri-cli --version "^2"
+rustup target add aarch64-linux-android  # Android 支持
+
+# 开发模式
+npm run tauri dev
+
+# 构建 Android APK
+npm run tauri android build
+```
+
+### 5. WebSocket 桥接（Node.js）
+
+前端 Web 应用无法直连 TCP 端口，通过此桥接服务中转。
+
+```bash
+cd websocket-bridge
+npm install
+npm start     # 监听 ws://localhost:8080
+```
+
+环境变量：
+
+| 变量 | 默认值 | 说明 |
+|------|--------|------|
+| `WS_PORT` | 8080 | WebSocket 监听端口 |
+| `TCP_HOST` | 127.0.0.1 | 后端 TCP 地址 |
+| `TCP_PORT` | 7000 | 后端 TCP 端口 |
+
+详见 [docs/WEBSOCKET_INTEGRATION.md](docs/WEBSOCKET_INTEGRATION.md)
+
+---
 
 ## 协议设计
 
-### 请求/响应格式
-- **数据格式**: JSON  
-- **操作类型** (`type`字段):  
-  | 类型       | 值  | 说明               |
-  |-----------|-----|-------------------|
-  | LOGIN     | 1   | 用户登录           |
-  | REGISTER  | 2   | 用户注册           |
-  | EXIT      | 3   | 退出系统           |
-  | VIEW      | 4   | 查看所有票务       |
-  | ORDER     | 5   | 预定票务           |
-  | VIEW_MY   | 6   | 查看个人预定记录   |
-  | CANCEL    | 7   | 取消预定           |
+### 通信协议
+
+- **传输层**：TCP，默认 `127.0.0.1:7000`
+- **数据格式**：JSON，按 `\n` 换行符分隔
+- **序列化库**：jsoncpp
+
+### 操作类型
+
+| type | 名称 | 说明 | 需要 token |
+|------|------|------|:----------:|
+| 1 | LOGIN | 用户登录，成功后返回 token | |
+| 2 | REGISTER | 用户注册 | |
+| 3 | EXIT | 退出登录 | |
+| 4 | VIEW | 查看在售票务，支持 `keyword`/`city`/`category` 筛选 | |
+| 5 | ORDER | 下单预订（`quantity` 1-6 张，创建 PENDING 待支付订单，15 分钟支付窗口） | ✓ |
+| 6 | VIEW_MY | 查看本人订单（含 `expire_at` 支付截止、`ticket_price` 单价） | ✓ |
+| 7 | CANCEL | 取消预订（PENDING / CONFIRMED 均可取消） | ✓ |
+| 8-15 | ADMIN_* | 管理员接口（登录 / 票务与用户管理 / 统计 / 黑名单） | admin_token |
+| 16 | DELETE_ORDER | 删除已取消/已过期订单记录 | ✓ |
+| 17 | VIEW_SEATS | 查看票务座位图 | |
+| 18 | VERIFY_ORDER | 按订单号验票（扫码核销） | |
+| 19 | TICKET_DETAIL | 票品详情（简介 / 购票须知 / 艺人 / 城市） | |
+| 20 | PAY_ORDER | 发起支付：创建支付流水（PROCESSING），提交模拟网关异步结算（`method`: MOCK \| ALIPAY \| WECHAT） | ✓ |
+| 21 | FAVORITE | 收藏 / 取消收藏（`action`: add \| remove） | ✓ |
+| 22 | VIEW_FAVORITES | 我的收藏（想看）列表 | ✓ |
+| 23 | HOT_TICKETS | 热门榜（按有效订单量 TOP N，`limit` 默认 10） | |
+| 24 | PAY_QUERY | 查询支付结果（前端发起支付后轮询至终态） | ✓ |
+
+### 请求示例
+
+```json
+{"type": 1, "usertel": "13800138000", "passward": "Password123"}
+{"type": 4, "keyword": "周杰伦", "city": "北京", "category": "concert"}
+{"type": 5, "token": "a1b2c3...", "index": 1, "quantity": 2}
+{"type": 20, "token": "a1b2c3...", "index": "81", "method": "MOCK"}
+{"type": 24, "token": "a1b2c3...", "index": "81"}
+{"type": 21, "token": "a1b2c3...", "index": "8", "action": "add"}
+```
+
+### 待支付订单生命周期（v3 异步支付）
+
+```
+ORDER(5) → PENDING（锁库存，expire_at = +15min）
+  ├─ PAY_ORDER(20)  → 创建 payments 流水（PROCESSING），订单仍 PENDING
+  │     └─ 定时结算任务（settle_interval_ms 周期，模拟网关回调）：
+  │           ├─ 成功 & 订单仍有效 → payment=SUCCESS, 订单=CONFIRMED（出票）
+  │           ├─ 成功但订单已失效  → payment=REFUNDED（补偿退款）
+  │           └─ 失败              → payment=FAILED, 订单保持 PENDING（可重试）
+  ├─ PAY_QUERY(24)  → 前端轮询支付结果 + 订单状态
+  ├─ CANCEL(7)      → CANCELLED（立即回补库存；已支付则同步 REFUNDED）
+  └─ 超时未支付      → 定时任务（30s 周期）标记 EXPIRED + 回补 MySQL 与 Redis 库存
+```
+
+> 支付流水的所有状态迁移都是 `WHERE status='PROCESSING'` 的条件 UPDATE，重复结算天然幂等；
+> 发起支付/取消/超时回收/结算确认都先锁定 reservation 行，同一订单上的竞争操作被串行化，杜绝超卖与重复扣款。
+> 模拟网关参数见 `config.json` 的 `payment` 段（`settle_delay_ms` / `settle_interval_ms` / `success_rate_percent`）。
+
+### 响应格式
+
+成功：`{"status": "OK", ...}`
+失败：`{"status": "ERR", "reason": "..."}`
+
+> **安全提示**：ORDER / VIEW_MY / CANCEL 必须携带 `token` 字段，服务端凭 token 识别用户身份，不再信任客户端自报的 `tel`/`usertel`。
 
 ---
 
-## 模块说明
+## 部署指南
 
-### Server 服务器
-> 详细说明见 [backend/Server/README.md](backend/Server/README.md)。
+### Docker 部署（推荐）
 
-#### 功能
-1. 使用自研 [backend/Inet](backend/Inet/README.md) Reactor 库（epoll）实现高并发网络通信
-2. 通过 MySQL 管理用户数据 (`users`)、票务数据 (`tickets`)、预定记录 (`reservations`)，并写审计表 (`reservation_audit`)
-3. 处理客户端请求，返回 JSON 格式响应
+完整部署栈：HyperTicket Server + MySQL 8.0 + Redis 7 + Prometheus + Grafana
 
-#### 处理链路与核心组件
-- **IO 线程（backend/Inet `TcpServer`）**：epoll 事件循环，按 `\n` 拆包、限流，再把请求投递给业务线程池
-- **业务线程池（`backend/FixedThreadPool`）**：`TicketService::handleRequest` 按 `type` 分发处理
-- **`SessionManager`**：会话 token 的签发、滑动续期与过期清理
-- **`MysqlStmt`**：`mysql_stmt_*` 预处理语句的 RAII 封装，参数化绑定防注入
-- **`SqlConnPool`**：连接池借还 MySQL 连接；ORDER/CANCEL 在事务内 `SELECT ... FOR UPDATE` 防超卖
-- **`ScheduledThreadPool`**：周期清理过期 token、巡检票务状态、输出统计
+```bash
+# 基础部署（应用 + 数据库 + Redis）
+docker-compose up -d
 
-#### 数据库表结构
+# 完整部署（含 Prometheus + Grafana 监控）
+docker-compose --profile monitoring up -d
 
-数据库结构以 `db/init.sql` 为准（见下方「数据库初始化」），脚本会创建以下表：
+# 查看状态
+docker-compose ps
 
-| 表 | 说明 |
-|----|------|
-| `users` | 用户：`tel`(唯一)、`username`、`password_hash`、`salt`、`status`(1 正常 / 0 黑名单) 等 |
-| `tickets` | 票务：`title`、`venue`、`total_seats`、`available_seats`、`event_date`、`status`(1 在售 / 0 下架) |
-| `reservations` | 预定记录：`user_id`、`ticket_id`、`quantity`、`status`(枚举 PENDING/CONFIRMED/CANCELLED/EXPIRED) |
-| `admins` | 管理员账户 |
-| `reservation_audit` | 预定/取消的审计流水 |
+# 查看日志
+docker-compose logs -f hyperticket
 
-> 此处不再内联完整建表语句，避免与 `db/init.sql` 产生分歧；如需字段细节请查看该脚本。
+# 健康检查
+curl http://localhost:7000/health
+```
 
-### Client 客户端
+**服务端口映射**：
 
-#### 功能
-1. 提供命令行交互界面
-2. 发送JSON请求，解析服务器响应
-3. 支持两种界面状态：
-   - **未登录**: 显示登录/注册选项
-   - **已登录**: 显示票务操作选项
+| 服务 | 内部端口 | 映射端口 |
+|------|----------|----------|
+| HyperTicket | 7000 | 7000 |
+| MySQL | 3306 | 3306 |
+| Redis | 6379 | 6379 |
+| Prometheus | 9090 | 9090 |
+| Grafana | 3000 | 3000 |
 
-#### 核心方法
-- `Connect_server()`: 连接服务器  
-- `login()/register_()`: 登录/注册逻辑  
-- `view()/order()/view_my()/cancel()`: 票务操作  
-- 输入验证：手机号格式、密码复杂度（需包含数字、大小写字母）
+**资源限制**（默认）：
+- CPU：2 核上限
+- 内存：2G 上限
 
-### Admin 管理员模块
-#### 核心功能
-1. **票务管理**
-   - 添加新票务（场馆名称、总票数、使用日期）
-   - 查看所有票务信息（含实时预订统计）
-2. **用户管理**
-   - 查看所有注册用户信息
-   - 查看/管理黑名单用户（加入/移出黑名单）
+自定义环境变量：
 
-#### 核心类说明
-- **`AdminManager`**: 管理员功能主控类
-  - `ConnectDB()`: 直连MySQL数据库（无需通过服务端）
-  - `Run()`: 控制台交互主循环
-  - 黑名单管理方法: 
-    - `AddToBlacklist()`: 通过手机号封禁用户
-    - `RemoveFromBlacklist()`: 恢复用户权限
+```bash
+DB_PASSWORD=my_secure_pass docker-compose up -d
+```
 
-#### 典型操作流程
-1. **添加票务**
-   ```text
-   场馆名称: 国家大剧院
-   总票数: 500
-   使用日期(YYYY-MM-DD): 2023-12-25
-   → 自动初始化已预订数为0
-   ```
+详见各 Docker 配置：
 
-2. **用户封禁**
-   ```text
-   输入手机号: 13812345678
-   → 自动验证用户存在性
-   → 更新users.status字段
-   ```
+| 组件 | 配置文件 |
+|------|----------|
+| MySQL | [docker/mysql/my.cnf](docker/mysql/my.cnf) |
+| Redis | [docker/redis/redis.conf](docker/redis/redis.conf) |
+| Prometheus | [docker/prometheus/prometheus.yml](docker/prometheus/prometheus.yml) |
 
-#### 注意事项
-1. 管理端直连数据库，连接信息从 `config.json` 的 `db` 段读取（同样支持 `.env` / 环境变量覆盖），**不再硬编码密码**。详见 [backend/Admin/README.md](backend/Admin/README.md) 与 [backend/Common/README.md](backend/Common/README.md)。
-2. 票务状态字段控制逻辑：
-   - 状态为0时用户端不可见
-   - 可通过`UPDATE tickets SET status=0 WHERE id=1`手动下架票务
+### 水平扩展
 
-#### 安全建议
-1. 生产环境应使用独立数据库账号并限制权限
-2. 管理端已使用预处理语句防注入，但仍建议仅供受信运营人员使用
-3. 敏感操作（如黑名单管理）可增加二次确认与操作日志
+1. 启用 Redis Session：`config.json` 中设置 `redis.enabled: true`
+2. 前置 Nginx / HAProxy / Kubernetes Service 负载均衡
+3. 所有实例共享同一个 Redis + MySQL
 
-### Web 前端界面
-> 详细说明见 [frontend/README.md](frontend/README.md)
+### 安全部署清单
 
-#### 功能模块
-1. **营销落地页** (`/`)
-   - 品牌展示与价值主张
-   - 核心功能介绍（演出/赛事/景区/电影）
-   - 技术优势展示
-   - 使用流程引导
-
-2. **认证页面** (`/auth/*`)
-   - 登录页面：手机号 + 密码，表单验证
-   - 注册页面：用户信息注册，密码强度检测
-   - 主题切换（日间/夜间模式）
-
-3. **客户界面** (`/customer/*`)
-   - 票务浏览：搜索、分类筛选、库存可视化
-   - 我的订单：订单列表、状态管理、支付/取消操作
-
-4. **管理后台** (`/admin/*`)
-   - 数据仪表盘：统计数据、最近订单、库存预警
-   - 票务管理：票务列表、增删改查
-
-#### 设计特点
-- **高端、优雅、无缝** 的品牌调性
-- 完整的设计系统（颜色、字体、间距、动画）
-- 响应式布局，支持桌面/平板/移动设备
-- 支持日夜间主题切换
-- 中文优先的排版设计
+- [ ] 数据库密码使用强密码，不硬编码在配置文件中
+- [ ] 生产环境使用独立数据库账号，权限最小化
+- [ ] 开启防火墙，仅暴露必要的端口（7000）
+- [ ] 启用 Redis 认证和 TLS
+- [ ] 管理端 `./bin/admin` 仅供受信运营人员使用
+- [ ] `.env` 和 `config.json` 已加入 `.gitignore`，避免密码泄露
 
 ---
 
-## 编译与运行
+## 配置文件
 
-### 依赖安装
-```bash
-# Ubuntu / Debian
-sudo apt install libjsoncpp-dev libmysqlclient-dev build-essential cmake
-```
-> 网络层为仓库内自带的 Inet（epoll）实现，无需再安装 libevent。
-
-### 使用 CMake 构建（推荐）
-```bash
-mkdir -p build && cd build
-cmake ..
-cmake --build . --target all -j$(nproc)
-```
-
-构建完成后，可执行文件会输出到仓库根目录的 `bin/` 目录：
-
-- `bin/ser`
-- `bin/client`
-- `bin/admin`
-
-### 测试
-仓库自带零依赖的单元测试（`tests/`），通过 CTest 注册（覆盖 Inet `Buffer`、`Timestamp`、`SessionManager`）：
+配置文件优先级（后覆盖前）：`config.json` → `.env` → 进程环境变量
 
 ```bash
-cd build
-ctest --output-on-failure
+# 首次使用
+cp config.example.json config.json
+# 编辑 config.json 填入实际配置
 ```
 
-### 运行
-先启动服务器，再运行客户端或管理员：
-```bash
-# 在一个终端中启动服务
-./bin/ser
+**关键配置项**：
 
-# 在另一个终端中运行客户端（交互式）
-./bin/client
-
-# 或运行管理员工具
-./bin/admin
-```
-
-若希望在当前终端保持交互而不被服务器日志打断，可将服务器置于后台并重定向日志：
-```bash
-# 后台运行并把日志写入 bin/ser.log
-./bin/ser > bin/ser.log 2>&1 &
-```
-
-### Mysql
-```sql
-create database hyperticket;
-use hyperticket;
-```
-服务端启动会尝试连接并使用 `config.json` 中的 MySQL 配置，若数据库不存在请先创建。
-
-### 配置文件
-`config.json` 控制服务端/客户端/管理端的连接信息与线程数量。
-
-> `config.json` 与 `.env` 含数据库密码，已被 `.gitignore` 排除，不在版本库中。
-> 首次使用请从模板复制并填入真实值：
->
-> ```bash
-> cp config.example.json config.json
-> # 然后编辑 config.json，填入数据库 host / user / password
-> ```
->
-> 若缺少 `config.json` 或其格式错误，`ser` 与 `admin` 会直接报错退出（不再静默使用默认值），这是有意的安全设计。
-
-**完整配置示例**：
 ```json
 {
   "server": {
-    "ip": "0.0.0.0",
-    "port": 7000,
-    "io_threads": 1,
-    "worker_threads": 8,
-    "max_connections": 1000,
-    "max_requests_per_sec": 20
+    "ip": "0.0.0.0",        "port": 7000,
+    "io_threads": 1,         "worker_threads": 8,
+    "max_connections": 1000, "max_requests_per_sec": 20
   },
   "db": {
-    "host": "127.0.0.1",
-    "port": 3306,
-    "user": "hyperticket",
-    "password": "your_password",
-    "name": "hyperticket",
-    "pool_size": 20
-  },
-  "log": {
-    "level": "INFO",
-    "basename": "hyperticket",
-    "roll_size": 16777216,
-    "flush_interval": 3
+    "host": "127.0.0.1",    "port": 3306,
+    "user": "hyperticket",  "password": "your_password",
+    "name": "hyperticket",  "pool_size": 20
   },
   "redis": {
-    "host": "127.0.0.1",
-    "port": 6379,
-    "pool_size": 10,
-    "session_ttl_minutes": 30,
     "enabled": false
   },
   "metrics": {
-    "port": 8080,
     "enabled": false
-  },
-  "schedule": {
-    "stats_interval_ms": 60000,
-    "ticket_status_interval_ms": 3600000
   }
 }
 ```
 
-可选：用 `.env` 覆盖数据库连接项（优先级：进程环境变量 > `.env` > `config.json`）。`.env` 与 `config.json` 同目录，键名为 `DB_HOST` / `DB_PORT` / `DB_USER` / `DB_PASSWORD` / `DB_NAME`，模板见 `.env.example`。
+`.env` 覆盖示例（见 `.env.example`）：
 
-> 已知限制：`io_threads` 默认为 `1`。Inet 网络库在「多 IO 线程 + 连接在一次较长事务后立即关闭」的并发场景下存在连接析构竞态（`EventLoop::abortNotInLoopThread`），尚未修复。设为 `1` 时功能与并发均正常（业务仍由多 worker 线程并行处理）。修复多 IO 线程下的析构竞态属于网络层后续工作。
-
-### 数据库依赖
-本项目不内置数据库，需要一个可访问的 MySQL 实例（在 `config.json` 的 `db` 段配置）。
-
-- **本机 MySQL**：`host` 填 `127.0.0.1`，按下方「数据库初始化」建库建表即可。
-- **WSL 连 Windows 上的 MySQL**：在 WSL2 镜像网络模式（`/etc/wsl.conf` 中 `networkingMode=mirrored`）下，Windows 监听的端口会镜像进 WSL 的 `localhost`，因此 `host` 同样填 `127.0.0.1`（不要用 `192.168.x.x` 之类的虚拟网卡地址）。注意此时数据库的生命周期由 Windows 侧掌控——Windows 上的 MySQL 未启动时，项目将无法连接。
-
-### 数据库初始化
-仓库包含 `db/init.sql`，用于初始化或迁移数据库结构。建议先在 MySQL 中运行该脚本：
-
-```bash
-# 使用有权限的 MySQL 用户运行（示例使用 root）
-mysql -u root -p < db/init.sql
+```env
+DB_HOST=127.0.0.1
+DB_PASSWORD=your_password
 ```
 
-脚本会创建 `hyperticket` 数据库及必要的表：`users`, `tickets`, `reservations`, `admins`, `reservation_audit`。
-请务必手动运行该脚本，`ser` 进程不会自动替你创建或修改数据库表结构。
-应用端应使用事务（SELECT ... FOR UPDATE）来安全地扣减库存并插入 `reservations`，避免超卖。
+> **已知限制**：`io_threads` 必须设为 `1`。Inet 网络库在多 IO 线程模式下存在连接析构竞态，设为 1 时功能正常（业务仍由多 worker 线程并行处理）。
 
 ---
 
-## 安全机制
+## 数据库
 
-服务端采用以下措施防护常见攻击：
+### 初始化
 
-- **会话令牌鉴权**：登录成功后服务端签发随机 token（32 字节，30 分钟滑动过期）。下单（type 5）、查看本人预定（type 6）、取消（type 7）必须携带 `token` 字段，服务端凭 token 反查用户身份，**不信任客户端自报的手机号**，杜绝越权操作他人订单。token 由服务端 `SessionManager` 维护（内存表 + 互斥锁），定时清理过期项。可选启用 Redis Session 持久化以支持多实例部署。
-- **SQL 注入防护**：所有含外部输入的查询（注册、登录、下单、查询、取消）均使用 `mysql_stmt_*` 预处理语句参数化绑定，用户名/手机号等被当作纯数据处理。
-- **连接限流**：全局最大连接数（`max_connections`，默认 1000）+ 单连接令牌桶频率限制（`max_requests_per_sec`，默认 20），超限分别拒绝连接或返回 `RATE_LIMITED`，防止恶意连接打满线程池。
-- **密码安全**：bcrypt 带盐哈希，支持旧密码自动迁移。
+```bash
+mysql -u root -p < db/init.sql
+```
 
-> 协议变更提示：若自行编写客户端，登录后须保存响应中的 `token`，并在 order/view_my/cancel 请求中带上 `token` 字段（旧版用 `tel` 字段的方式已不再被接受）。
+### 表结构
+
+| 表 | 说明 | 主要字段 |
+|----|------|----------|
+| `users` | 用户 | tel(唯一), username, password_hash, salt, status, last_login |
+| `tickets` | 票务 | title, venue, total_seats, available_seats, event_date, status |
+| `reservations` | 订单 | user_id, ticket_id, quantity, status(ENUM), created_at |
+| `admins` | 管理员 | username, password_hash, role |
+| `reservation_audit` | 审计流水 | reservation_id, action, detail, created_at |
+
+### 索引优化
+
+- 复合索引：用户登录同时检查状态（`tel + status`）
+- 覆盖索引：票务列表查询避免回表
+- 外键约束 + 行锁（`SELECT ... FOR UPDATE`）防止超卖
+
+---
 
 ## 企业级功能
 
 ### 1. Redis Session 持久化（可选）
 
-**功能**：将 Session 持久化到 Redis，支持多实例水平扩展。
+将 Session 持久化到 Redis，支持多实例水平扩展。
 
-**启用方式**：
 ```json
-{
-  "redis": {
-    "host": "127.0.0.1",
-    "port": 6379,
-    "enabled": true
-  }
-}
+{ "redis": { "enabled": true, "host": "127.0.0.1", "port": 6379 } }
 ```
 
-**优势**：
-- 支持多实例部署（负载均衡）
-- Session 持久化，进程重启不丢失
-- 自动过期（Redis TTL）
-- 高性能（< 1ms 延迟）
+**实现文件**：
+- `backend/Server/include/RedisSessionManager.hpp`
+- `backend/Server/src/RedisSessionManager.cpp`
+- `backend/Server/src/RedisConnPool.cpp`
 
-**注意**：当前为占位实现（文件模拟），生产环境需要：
-1. 安装 `libhiredis-dev`
-2. 替换 `backend/Server/src/RedisSessionManager.cpp` 中的实现
-3. 参考文件中的完整示例代码
+**生产要求**：`sudo apt install libhiredis-dev`
 
-详见：[docs/REDIS_SESSION_GUIDE.md](docs/REDIS_SESSION_GUIDE.md)
+详见 [docs/REDIS_SESSION_IMPLEMENTATION.md](docs/REDIS_SESSION_IMPLEMENTATION.md)
 
-### 2. Prometheus Metrics 监控（可选）
+### 2. Prometheus Metrics（可选）
 
-**功能**：暴露 Prometheus 格式的监控指标。
+暴露 Prometheus 格式监控指标。
 
-**启用方式**：
 ```json
-{
-  "metrics": {
-    "port": 8080,
-    "enabled": true
-  }
-}
+{ "metrics": { "enabled": true, "port": 8080 } }
 ```
 
-**暴露的指标**：
-- `hyperticket_requests_total` - 请求总数（按 method 和 status）
-- `hyperticket_orders_total` - 订单总数
-- `hyperticket_sessions_active` - 活跃会话数
-- `hyperticket_db_connections_active/idle` - 数据库连接数
-- `hyperticket_errors_total` - 错误总数（按类型）
+**指标列表**：
 
-**访问**：
+| 指标 | 类型 | 说明 |
+|------|------|------|
+| `hyperticket_requests_total` | Counter | 请求总数（按 method + status） |
+| `hyperticket_orders_total` | Counter | 订单总数 |
+| `hyperticket_sessions_active` | Gauge | 活跃会话数 |
+| `hyperticket_db_connections_active` | Gauge | 活跃数据库连接数 |
+| `hyperticket_db_connections_idle` | Gauge | 空闲数据库连接数 |
+| `hyperticket_errors_total` | Counter | 错误总数（按类型） |
+
 ```bash
 curl http://localhost:8080/metrics
 ```
 
-**Prometheus 配置**：
-```yaml
-scrape_configs:
-  - job_name: 'hyperticket'
-    static_configs:
-      - targets: ['localhost:8080']
-    scrape_interval: 10s
-```
-
-详见：[docs/PROMETHEUS_METRICS_GUIDE.md](docs/PROMETHEUS_METRICS_GUIDE.md)
+详见 [docs/PROMETHEUS_METRICS_GUIDE.md](docs/PROMETHEUS_METRICS_GUIDE.md)
 
 ### 3. 健康检查
 
-**端点**：`GET /health`
+**端点**：`GET /health`（端口 7000）
 
-**响应示例**：
 ```json
 {
   "status": "healthy",
   "checks": {
-    "database": {"passed": true, "message": "ok", "duration_ms": 2},
-    "disk_space": {"passed": true, "message": "usage: 45%", "duration_ms": 15},
-    "memory": {"passed": true, "message": "usage: 60%", "duration_ms": 10}
+    "database": {"passed": true, "duration_ms": 2},
+    "disk_space": {"passed": true, "usage": "45%"},
+    "memory": {"passed": true, "usage": "60%"}
   },
   "uptime_seconds": 120,
   "version": "1.0.0"
 }
 ```
 
-**Kubernetes 集成**：
+**Kubernetes Probe**：
 ```yaml
 livenessProbe:
-  httpGet:
-    path: /health
-    port: 7000
+  httpGet: { path: /health, port: 7000 }
   initialDelaySeconds: 30
   periodSeconds: 10
 ```
 
-详见：[QUICKSTART.md](QUICKSTART.md)
+---
 
-## 注意事项
+## 测试
 
-1. 确保MySQL服务已启动，且数据库账号密码与`config.json`一致
-2. 服务器默认监听 `0.0.0.0:7000`（对外可达），可在 `config.json` 的 `server.ip`/`server.port` 修改；仅本机访问可改为 `127.0.0.1`
-3. **多 IO 线程限制**：当前 `io_threads` 必须设为 `1`（已在 config.json 中配置）。Inet 网络库在多 IO 线程模式下存在连接析构竞态，Phase 1 修复已完成，Phase 2 & 3 需要进一步测试。详见 [docs/MULTITHREAD_FIX.md](docs/MULTITHREAD_FIX.md)
+零外部依赖的单元测试，通过 CTest 注册：
 
-## 性能优化
+```bash
+cd build && ctest --output-on-failure
 
-### 已完成的优化
-- **数据库索引优化**：复合索引、覆盖索引，查询性能提升 10-100 倍
-- **连接池健康检查**：自动重连、定期 ping，连接失败率从 5% 降至 0.1%
-- **密码哈希升级**：bcrypt 带盐哈希，支持旧密码自动迁移
-- **多 IO 线程竞态修复（Phase 1）**：关键方法使用 `shared_from_this()`
+# 单独运行
+./build/test_buffer
+./build/test_session
+./build/test_protocol
+./build/test_timestamp
+./build/test_redis_session
+```
 
-### 性能指标
-- **QPS**：单实例 > 10,000（8 worker threads）
-- **延迟**：P99 < 100ms（含数据库查询）
-- **并发连接**：1000+（可配置）
-- **数据库连接池**：20 连接（可配置）
+| 测试文件 | 覆盖模块 |
+|----------|----------|
+| `test_buffer.cpp` | Inet Buffer 类 |
+| `test_timestamp.cpp` | ChronoLite Timestamp |
+| `test_session.cpp` | Server SessionManager |
+| `test_protocol.cpp` | JSON 协议解析 |
+| `test_redis_session.cpp` | Redis Session 管理 |
 
-## 改进方向
+### 基准测试
 
-1. **安全性增强**  
-   - 密码哈希升级：已升级为 bcrypt 带盐哈希，支持旧密码自动迁移
-   - token 持久化到 Redis 以支持多实例部署：接口已实现，支持配置启用
+```bash
+./scripts/benchmark.sh      # 完整基准测试
+./scripts/simple_benchmark.sh # 快速基准测试
+```
 
-2. **性能优化**  
-   - 增加 Redis 缓存热门票务数据：Redis Session Manager 已实现
-   - 数据库索引优化：已完成
-   - 连接池健康检查：已完成
+---
 
-3. **网络层优化**
-   - 修复多 IO 线程下的连接析构竞态（Phase 1）：已完成
-   - 修复多 IO 线程下的连接析构竞态（Phase 2 & 3）：需要进一步测试
-   - 实现 channel 优先级排序
+## 项目结构
 
-4. **监控与可观测性**
-   - Prometheus Metrics 监控：已实现轻量级版本
-   - 健康检查端点：已完成
-   - Grafana 仪表盘（可使用现有 metrics）
-   - 分布式追踪（OpenTelemetry）
+```
+HyperTicket/
+├── bin/                       # 编译输出（ser / client / admin）
+├── backend/                   # C++ 后端源码
+│   ├── Admin/                 # 管理端 CLI 工具
+│   ├── ChronoLite/            # 异步日志库
+│   ├── Client/                # CLI 客户端
+│   ├── Common/                # 统一配置加载
+│   ├── Domain/                # 领域层（Service + Repository）
+│   ├── FixedThreadPool/       # 固定线程池
+│   ├── Inet/                  # epoll Reactor 网络库
+│   ├── ScheduledThreadPool/   # 定时任务线程池
+│   ├── Server/                # 服务端主程序
+│   └── SqlConnPool/           # MySQL 连接池
+├── clients/                   # 桌面/移动客户端
+│   ├── admin-client/          # Qt6 QML 管理员客户端
+│   └── user-client/           # Tauri 2 + React 用户客户端
+├── db/                        # 数据库脚本
+│   └── init.sql               # 建库建表（单数据源）
+├── docker/                    # Docker 配置文件
+│   ├── mysql/my.cnf
+│   ├── redis/redis.conf
+│   ├── prometheus/prometheus.yml
+│   └── grafana/
+├── docs/                      # 技术文档
+├── frontend/                  # React Web 前端
+├── reports/                   # AI 日志分析报告输出（gitignored）
+├── scripts/                   # 工具脚本
+├── tests/                     # 单元测试
+├── tools/                     # AI 辅助工具
+│   ├── log_ai_detector/       # 日志 AI 检测（Python，监控 ERROR/FATAL → LLM 分析）
+│   ├── log-ai-detector-ui/    # 日志检测独立 Web UI（Vite + React）
+│   └── doc_qa.py              # 文档问答机器人（分级索引 + 渐进式披露）
+├── websocket-bridge/          # WebSocket ↔ TCP 桥接
+├── docker-compose.yml         # 完整部署编排
+├── Dockerfile                 # 多阶段构建
+├── config.example.json        # 配置模板
+└── .env.example               # 环境变量模板
+```
 
-5. **功能扩展**  
-   - 分布式部署支持（Redis Session 已就绪）
-   - 微信/支付宝支付集成
-   - 可视化监控仪表盘
+---
 
-## 文档
+## 文档目录
 
 ### 核心文档
-- [README.md](README.md) - 项目概述（本文档）
-- [QUICKSTART.md](QUICKSTART.md) - 快速开始指南
-- [CLAUDE.md](CLAUDE.md) - 开发指南（给 Claude Code 使用）
+| 文档 | 说明 |
+|------|------|
+| [README.md](README.md) | 项目总览（本文档） |
+| [DESIGN.md](DESIGN.md) | 前端设计系统（颜色、字体、布局） |
+| [PRODUCT.md](PRODUCT.md) | 产品需求与品牌定位 |
+| [CLAUDE.md](CLAUDE.md) | 开发指南（给 AI 使用） |
 
-### 功能文档
-- [docs/REDIS_SESSION_GUIDE.md](docs/REDIS_SESSION_GUIDE.md) - Redis Session 持久化集成指南
-- [docs/PROMETHEUS_METRICS_GUIDE.md](docs/PROMETHEUS_METRICS_GUIDE.md) - Prometheus Metrics 监控集成指南
-- [docs/MULTITHREAD_FIX.md](docs/MULTITHREAD_FIX.md) - 多 IO 线程竞态修复方案
-- [docs/IMPLEMENTATION_COMPLETE.md](docs/IMPLEMENTATION_COMPLETE.md) - 残留工作完成报告
+### 技术文档
+| 文档 | 说明 |
+|------|------|
+| [docs/V2_FEATURES.md](docs/V2_FEATURES.md) | v2 功能升级：详情页 / 搜索筛选 / 待支付 / 收藏 / 热门榜 |
+| [docs/WEBSOCKET_INTEGRATION.md](docs/WEBSOCKET_INTEGRATION.md) | WebSocket 桥接集成指南 |
+| [docs/PROMETHEUS_METRICS_GUIDE.md](docs/PROMETHEUS_METRICS_GUIDE.md) | Prometheus + Grafana 监控 |
+| [docs/REDIS_SESSION_IMPLEMENTATION.md](docs/REDIS_SESSION_IMPLEMENTATION.md) | Redis Session 持久化实现 |
+| [docs/REDIS_HIGH_CONCURRENCY.md](docs/REDIS_HIGH_CONCURRENCY.md) | Redis 高并发库存缓存架构 |
 
 ### 模块文档
-- [backend/Server/README.md](backend/Server/README.md) - 服务端说明
-- [backend/Client/README.md](backend/Client/README.md) - 客户端说明
-- [backend/Admin/README.md](backend/Admin/README.md) - 管理端说明
-- [backend/Inet/README.md](backend/Inet/README.md) - 网络库说明
-- [backend/ChronoLite/README.md](backend/ChronoLite/README.md) - 日志库说明
-- [backend/SqlConnPool/README.md](backend/SqlConnPool/README.md) - 连接池说明
-- [其他模块 README](backend/)
+| 文档 | 说明 |
+|------|------|
+| [backend/Inet/README.md](backend/Inet/README.md) | Inet 网络库 |
+| [backend/ChronoLite/README.md](backend/ChronoLite/README.md) | ChronoLite 日志库 |
+| [backend/FixedThreadPool/README.md](backend/FixedThreadPool/README.md) | FixedThreadPool |
+| [backend/SqlConnPool/README.md](backend/SqlConnPool/README.md) | SqlConnPool 连接池 |
+| [backend/Server/README.md](backend/Server/README.md) | 服务端说明 |
+| [backend/Client/README.md](backend/Client/README.md) | CLI 客户端说明 |
+| [backend/Admin/README.md](backend/Admin/README.md) | 管理端说明 |
+| [clients/README.md](clients/README.md) | 桌面客户端说明 |
+| [frontend/README.md](frontend/README.md) | Web 前端说明 |
+| [tools/log_ai_detector/README.md](tools/log_ai_detector/README.md) | 日志 AI 检测工具 |
+
+---
+
+## AI 辅助工具
+
+### 日志 AI 检测（log_ai_detector）
+
+监控 `logs/*.log` 中的 ERROR/FATAL，自动调用 LLM（默认 DeepSeek `deepseek-v4-flash`）结合代码索引与最近 feat commit diff 定位问题，生成 Markdown 报告并支持 webhook/邮件通知。
+
+```bash
+# 构建独立 Web UI（首次）
+cd tools/log-ai-detector-ui && npm install && npm run build && cd ../..
+
+# 启动监控 + Web 服务
+scripts/log-ai-detector --serve
+
+# 访问 UI（含模型切换、报告查看、单次分析）
+# http://localhost:7070/log-ai-detector/
+```
+
+配置来自 `.env`（`LOG_AI_*` / `DEEPSEEK_API_KEY`），详见 [tools/log_ai_detector/README.md](tools/log_ai_detector/README.md)。
+
+### 文档问答机器人（doc_qa）
+
+基于分级索引 + 渐进式披露：第一轮 LLM 从文件摘要索引中挑选相关文档，第二轮加载全文回答，文档量增长不影响上下文占用。
+
+```bash
+python3 tools/doc_qa.py                             # 交互模式
+python3 tools/doc_qa.py -q "Server 的请求处理流程？"  # 单次提问
+python3 tools/doc_qa.py --serve                     # Web UI（对话界面 + 文档索引树）
+# → http://127.0.0.1:7171/doc-qa/
+```
+
+Web UI 首次使用需构建：`cd tools/doc-qa-ui && npm install && npm run build`。
+每个回答会标注本轮加载的文档来源。
+
+### codegraph 代码索引（feat commit 触发）
+
+```bash
+scripts/update-code-index-on-feat-commit --full          # 全量索引
+scripts/update-code-index-on-feat-commit --install-hook  # 安装 post-commit 钩子
+```
+
+安装钩子后，每次 `feat:` commit 自动根据 diff 增量更新本地代码索引，供日志分析定位问题使用。
+
+---
+
+## 贡献
+
+1. Fork 本仓库
+2. 创建特性分支：`git checkout -b feature/amazing-feature`
+3. 提交变更：`git commit -m 'Add amazing feature'`
+4. 推送分支：`git push origin feature/amazing-feature`
+5. 创建 Pull Request
+
+## 许可证
+
+[MIT](LICENSE) © 2026 shanchuann

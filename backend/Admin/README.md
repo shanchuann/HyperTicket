@@ -6,7 +6,8 @@
 
 - 直接使用 MySQL C API，进程内维持一条持久连接（`MYSQL mysql;`）。
 - 数据库配置经 [Common/AppConfig](../Common/README.md) 从 `config.json` / `.env` / 环境变量读取（`db_ip`/`db_user`/`db_passwd`/`db_name`），**不再硬编码密码**。
-- 核心类：`AdminManager`，菜单驱动循环。
+- 核心类：`AdminManager`（控制台交互）+ `AdminService`（业务逻辑，位于 Domain 层）。
+- 数据操作经 `AdminService` → Repository → `MysqlStmt` 预处理语句执行，与 ser 共享同一套防注入的数据访问。
 
 ## 功能（`ADMIN_OP`）
 
@@ -33,10 +34,11 @@ cmake -S . -B build && cmake --build build -j
 
 ## 注意事项
 
-- 管理端 SQL 目前以字符串拼接 + `mysql_query` 执行，**未使用预处理语句**（与服务端不同）。它是受信运营人员在本地使用的内部工具，请勿暴露给不可信输入；如需对外，应改造为参数化查询。
+- 全部外部输入 SQL 已通过 `MysqlStmt` 预处理语句执行（经 `AdminService` / Repository），与服务端一致。
+- 需要管理员登录（bcrypt 校验），默认密码强制修改。
 - 管理端不做并发控制，假定单人操作。
 
 ## 源码
 
 - `include/admin.hpp`：`ADMIN_OP`、`AdminManager` 声明
-- `src/admin.cpp`：连接、菜单与各管理操作实现
+- `src/admin.cpp`：连接、菜单与控制台交互（业务委托给 `Domain/include/service/AdminService.hpp`）

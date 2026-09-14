@@ -275,6 +275,19 @@ int main() {
 - 日志输出可自定义，默认输出到控制台
 - .gitignore 已忽略 build/ 和 bin/ 目录
 
+## AI 日志分析
+
+项目提供基于 LLM 的日志自动分析工具（`tools/log_ai_detector/`），
+监控 ChronoLite 输出的 `logs/*.log`，检测到 ERROR/FATAL 级别日志时自动
+结合源码上下文调用 DeepSeek 生成诊断报告。日志行格式解析依赖本库的固定输出格式：
+
+```
+YYYY/MM/DD HH:MM:SS THREAD_ID LEVEL FILE FUNCTION LINE: MESSAGE
+```
+
+修改 `LogMessage.cpp` 的格式化逻辑时，需同步更新
+`tools/log_ai_detector/chrono_parser.py` 中的正则表达式。
+
 ---
 ## 许可证
 

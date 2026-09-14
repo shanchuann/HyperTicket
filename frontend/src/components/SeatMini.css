@@ -1,0 +1,87 @@
+.sm-root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+}
+
+.sm-stage {
+  width: 100%;
+  text-align: center;
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  background: var(--color-primary);
+  color: white;
+  padding: 3px 0;
+  border-radius: var(--radius-sm) var(--radius-sm) 0 0;
+  opacity: 0.85;
+}
+
+.sm-grid { display: flex; flex-direction: column; gap: 3px; width: 100%; }
+
+.sm-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.sm-row-label {
+  width: 16px;
+  font-size: 9px;
+  color: var(--color-text-tertiary);
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.sm-seats { display: flex; gap: 2px; flex-wrap: nowrap; overflow: hidden; }
+
+.sm-seat {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  background: var(--color-divider);
+  border: 1px solid var(--color-border);
+  flex-shrink: 0;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sm-seat.mine {
+  width: 12px;
+  height: 12px;
+  animation: sm-pulse 1.8s ease-in-out infinite;
+}
+
+.sm-seat-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: white;
+}
+
+@keyframes sm-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px transparent; }
+  50%       { box-shadow: 0 0 0 3px oklch(from var(--color-primary) l c h / 0.3); }
+}
+
+.sm-legend {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-caption);
+  color: var(--color-text-secondary);
+  font-weight: var(--weight-medium);
+}
+
+.sm-legend-dot {
+  width: 10px; height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}

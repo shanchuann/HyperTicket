@@ -384,6 +384,101 @@
 .modal-btn-submit:hover:not(:disabled) { background: var(--color-primary-hover); }
 .modal-btn-submit:disabled { opacity: 0.6; cursor: not-allowed; }
 
+.form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--space-4);
+}
+
+/* Cover image upload */
+.cover-upload-area {
+  width: 100%;
+}
+
+.cover-upload-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  width: 100%;
+  padding: var(--space-5);
+  background: var(--color-bg-secondary);
+  border: 1.5px dashed var(--color-border);
+  border-radius: var(--radius-md);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out-quart),
+              background var(--duration-fast) var(--ease-out-quart);
+  font-family: var(--font-body);
+  font-size: var(--text-body-sm);
+}
+
+.cover-upload-btn:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+  background: oklch(from var(--color-primary) l c h / 0.05);
+}
+
+.cover-upload-hint {
+  font-size: var(--text-caption);
+  color: var(--color-text-tertiary);
+}
+
+.cover-preview-wrapper {
+  position: relative;
+  width: 100%;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  border: 1px solid var(--color-border);
+}
+
+.cover-preview-img {
+  width: 100%;
+  height: 160px;
+  object-fit: cover;
+  display: block;
+}
+
+.cover-preview-actions {
+  position: absolute;
+  top: var(--space-2);
+  right: var(--space-2);
+  display: flex;
+  gap: var(--space-2);
+  align-items: center;
+}
+
+.cover-redit-btn {
+  padding: var(--space-1) var(--space-3);
+  background: oklch(0 0 0 / 0.5);
+  border: none;
+  border-radius: var(--radius-sm);
+  color: white;
+  font-size: var(--text-caption);
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: background var(--duration-fast);
+}
+
+.cover-redit-btn:hover { background: oklch(0 0 0 / 0.7); }
+
+.cover-remove-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  background: oklch(0 0 0 / 0.5);
+  border: none;
+  border-radius: 50%;
+  color: white;
+  cursor: pointer;
+  transition: background var(--duration-fast) var(--ease-out-quart);
+}
+
+.cover-remove-btn:hover { background: oklch(0 0 0 / 0.7); }
+
 /* Responsive */
 @media (max-width: 767px) {
   .ticket-manage {
@@ -399,4 +494,12 @@
   .ticket-table td {
     padding: var(--space-3);
   }
+}
+
+/* v2：详情/须知输入 */
+.form-textarea {
+  resize: vertical;
+  min-height: 72px;
+  font-family: inherit;
+  line-height: 1.6;
 }

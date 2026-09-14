@@ -6,10 +6,11 @@ import './AuthLayout.css';
 const AuthLayout = () => {
   const { theme, toggleTheme } = useTheme();
 
+  // 实测数据（WSL + Windows MySQL，10 并发，io_threads=1）
   const features = [
-    { icon: Zap, title: '高性能', description: '单实例 QPS > 10,000' },
-    { icon: Shield, title: '安全可靠', description: '企业级安全防护' },
-    { icon: Activity, title: '实时监控', description: '99.9% 服务可用性' },
+    { icon: Zap, title: '高性能', description: '实测 QPS 1,973，P50 延迟 1.8ms' },
+    { icon: Shield, title: '安全可靠', description: '事务锁防超卖，bcrypt 加密，SQL 预处理' },
+    { icon: Activity, title: '低延迟', description: '实测 P99 < 25ms（10 并发）' },
   ];
 
   return (

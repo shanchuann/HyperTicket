@@ -22,9 +22,9 @@ const AdminLayout = () => {
   };
 
   const navItems = [
-    { path: '/admin', label: '概览', icon: BarChart3 },
-    { path: '/admin/tickets', label: '票务管理', icon: Ticket },
-    { path: '/admin/users', label: '用户管理', icon: Users },
+    { path: '/admin',         label: '概览',    icon: BarChart3 },
+    { path: '/admin/tickets', label: '票务管理', icon: Ticket    },
+    { path: '/admin/users',   label: '用户管理', icon: Users     },
   ];
 
   const isActive = (path: string) => {

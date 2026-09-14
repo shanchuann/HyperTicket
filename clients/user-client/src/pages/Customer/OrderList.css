@@ -227,3 +227,10 @@
     flex-direction: column;
   }
 }
+
+/* v2：去支付 */
+.order-btn-primary {
+  background: var(--color-primary, #1f4e5f);
+  color: #fff;
+  border: none;
+}

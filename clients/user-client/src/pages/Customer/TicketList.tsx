@@ -12,16 +12,24 @@ const TicketList = () => {
   const [searchQuery, setSearchQuery] = useState('');
   const [orderingId, setOrderingId] = useState<number | null>(null);
   const [orderMsg, setOrderMsg] = useState('');
+  const [city, setCity] = useState('');
+  const [category, setCategory] = useState('');
+  const [cities, setCities] = useState<string[]>([]);
 
   const categories = [
-    { id: 'all', label: '全部' },
+    { id: '', label: '全部' },
+    { id: 'concert', label: '演唱会' },
+    { id: 'sports', label: '体育' },
+    { id: 'theater', label: '话剧歌剧' },
+    { id: 'exhibition', label: '展览' },
+    { id: 'movie', label: '电影' },
   ];
 
-  const loadTickets = async () => {
+  const loadTickets = async (ct = city, cat = category) => {
     setLoading(true);
     setLoadError('');
     try {
-      const data = await ticketApi.getTickets();
+      const data = await ticketApi.getTickets({ city: ct, category: cat });
       setTickets(data);
     } catch (err) {
       setLoadError(err instanceof Error ? err.message : '加载票务失败，请重试');
@@ -31,8 +39,14 @@ const TicketList = () => {
   };
 
   useEffect(() => {
-    loadTickets();
+    // 首次加载顺带提取城市集合
+    ticketApi.getTickets().then(data => {
+      setCities([...new Set(data.map(t => t.city).filter(Boolean))]);
+    }).catch(() => {});
+    loadTickets('', '');
   }, []);
+
+  useEffect(() => { loadTickets(city, category); }, [city, category]);
 
   const handleOrder = async (ticket: Ticket) => {
     const token = localStorage.getItem('token');
@@ -43,8 +57,10 @@ const TicketList = () => {
     setOrderingId(ticket.id);
     setOrderMsg('');
     try {
-      await orderApi.createOrder(token, ticket.id);
-      setOrderMsg(`成功预订「${ticket.title}」`);
+      const resp = await orderApi.createOrder(token, ticket.id);
+      setOrderMsg(resp.order_status === 'PENDING'
+        ? `已锁定「${ticket.title}」，请到“我的订单”在 15 分钟内完成支付`
+        : `成功预订「${ticket.title}」`);
       // 刷新票务列表更新剩余数量
       const data = await ticketApi.getTickets();
       setTickets(data);
@@ -91,7 +107,7 @@ const TicketList = () => {
             {loadError}
             <button
               style={{ marginLeft: '12px', cursor: 'pointer', background: 'none', border: 'none', color: 'inherit', textDecoration: 'underline' }}
-              onClick={loadTickets}
+              onClick={() => loadTickets()}
             >重试</button>
           </div>
         )}
@@ -118,12 +134,23 @@ const TicketList = () => {
             {categories.map(cat => (
               <button
                 key={cat.id}
-                className="ticket-category-btn active"
+                className={`ticket-category-btn ${category === cat.id ? 'active' : ''}`}
+                onClick={() => setCategory(cat.id)}
               >
                 {cat.label}
               </button>
             ))}
           </div>
+          {cities.length > 0 && (
+            <div className="ticket-categories">
+              <button className={`ticket-category-btn ${city === '' ? 'active' : ''}`}
+                onClick={() => setCity('')}>全部城市</button>
+              {cities.map(c => (
+                <button key={c} className={`ticket-category-btn ${city === c ? 'active' : ''}`}
+                  onClick={() => setCity(c)}>{c}</button>
+              ))}
+            </div>
+          )}
         </div>
       </div>
 
@@ -131,7 +158,10 @@ const TicketList = () => {
         {filteredTickets.map(ticket => (
           <div key={ticket.id} className="ticket-card">
             <div className="ticket-card-header">
-              <span className="ticket-category">票务</span>
+              <span className="ticket-category">
+                {categories.find(c => c.id === ticket.category)?.label || '演出'}
+                {ticket.city ? ` · ${ticket.city}` : ''}
+              </span>
               <span className="ticket-date">
                 <Calendar size={14} />
                 {formatDate(ticket.event_date)}
@@ -163,9 +193,9 @@ const TicketList = () => {
 
             <div className="ticket-footer">
               <div className="ticket-price">
-                <span className="ticket-price-symbol">剩余</span>
-                <span className="ticket-price-value">{ticket.available_seats}</span>
-                <span className="ticket-price-unit">张</span>
+                <span className="ticket-price-symbol">￥</span>
+                <span className="ticket-price-value">{ticket.price}</span>
+                <span className="ticket-price-unit">起</span>
               </div>
               <button
                 className="ticket-action"

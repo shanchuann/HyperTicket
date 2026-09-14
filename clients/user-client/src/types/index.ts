@@ -48,6 +48,13 @@ export interface BackendTicket {
   num: string;
   use_date: string;
   status: string;
+  category?: string;
+  price?: number;
+  city?: string;
+  artist?: string;
+  description?: string;
+  notice?: string;
+  hot?: number;
 }
 
 // 票务（前端展示用，规范化后的字段）
@@ -60,6 +67,12 @@ export interface Ticket {
   event_date: string;
   status: number;
   category?: string;
+  price: number;
+  city: string;
+  artist: string;
+  description?: string;
+  notice?: string;
+  hot?: number;
 }
 
 export interface ViewTicketsBackendResponse extends BackendResponse {
@@ -76,6 +89,8 @@ export interface BackendOrder {
   num: string;
   status: string;
   use_date?: string;
+  expire_at?: string;
+  ticket_price?: number;
 }
 
 // 订单（前端展示用）
@@ -87,6 +102,8 @@ export interface Order {
   quantity: number;
   status: 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'EXPIRED';
   event_date: string;
+  expire_at: string;
+  ticket_price: number;
 }
 
 export interface ViewMyOrdersBackendResponse extends BackendResponse {
@@ -127,6 +144,13 @@ export function normalizeTicket(t: BackendTicket): Ticket {
     available_seats: parseInt(t.num),
     event_date: t.use_date,
     status: parseInt(t.status),
+    category: t.category,
+    price: t.price ?? 0,
+    city: t.city || '',
+    artist: t.artist || '',
+    description: t.description,
+    notice: t.notice,
+    hot: t.hot,
   };
 }
 
@@ -148,5 +172,7 @@ export function normalizeOrder(o: BackendOrder): Order {
     quantity: parseInt(o.num),
     status: statusMap[o.status] || 'PENDING',
     event_date: o.use_date || '',
+    expire_at: o.expire_at || '',
+    ticket_price: o.ticket_price ?? 0,
   };
 }

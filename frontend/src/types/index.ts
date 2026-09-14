@@ -1,37 +1,14 @@
 // HyperTicket API 类型定义（与后端真实协议对齐）
 
-// 操作类型
-export type OperationType = 1 | 2 | 3 | 4 | 5 | 6 | 7;
-
 export const OperationType = {
-  LOGIN: 1 as 1,
-  REGISTER: 2 as 2,
-  EXIT: 3 as 3,
-  VIEW: 4 as 4,
-  ORDER: 5 as 5,
-  VIEW_MY: 6 as 6,
-  CANCEL: 7 as 7,
-};
+  LOGIN: 1, REGISTER: 2, EXIT: 3, VIEW: 4, ORDER: 5,
+  VIEW_MY: 6, CANCEL: 7, DELETE_ORDER: 16, VIEW_SEATS: 17,
+} as const;
 
-// 基础响应（后端统一用 status: "OK" | "ERR"）
 export interface BackendResponse {
   status: 'OK' | 'ERR';
   reason?: string;
   [key: string]: unknown;
-}
-
-// 认证
-export interface LoginRequest {
-  type: 1;
-  usertel: string;
-  passward: string; // 后端拼写
-}
-
-export interface RegisterRequest {
-  type: 2;
-  usertel: string;
-  passward: string;
-  username: string;
 }
 
 export interface AuthBackendResponse extends BackendResponse {
@@ -39,7 +16,8 @@ export interface AuthBackendResponse extends BackendResponse {
   username?: string;
 }
 
-// 票务（后端字段）
+// ── Tickets ──────────────────────────────────────────────────────────────────
+
 export interface BackendTicket {
   tk_id: string;
   title: string;
@@ -48,9 +26,19 @@ export interface BackendTicket {
   num: string;
   use_date: string;
   status: string;
+  tk_status?: string; // 详情接口用此字段（status 被协议字段 OK/ERR 占用）
+  cover_image?: string;
+  category?: string;
+  price?: number;
+  city?: string;
+  artist?: string;
+  description?: string;
+  notice?: string;
+  hot?: number;
 }
 
-// 票务（前端展示用，规范化后的字段）
+export type TicketCategory = 'concert' | 'sports' | 'movie' | 'theater' | 'exhibition';
+
 export interface Ticket {
   id: number;
   title: string;
@@ -59,7 +47,14 @@ export interface Ticket {
   available_seats: number;
   event_date: string;
   status: number;
-  category?: string;
+  cover_image?: string;
+  category: TicketCategory;
+  price: number; // yuan
+  city: string;
+  artist: string;
+  description?: string; // 详情接口才返回
+  notice?: string;
+  hot?: number;         // 热门榜有效订单数
 }
 
 export interface ViewTicketsBackendResponse extends BackendResponse {
@@ -67,7 +62,8 @@ export interface ViewTicketsBackendResponse extends BackendResponse {
   num?: number;
 }
 
-// 订单（后端字段）
+// ── Orders ────────────────────────────────────────────────────────────────────
+
 export interface BackendOrder {
   reservation_id: string;
   tk_id: string;
@@ -76,9 +72,16 @@ export interface BackendOrder {
   num: string;
   status: string;
   use_date?: string;
+  created_at?: string;
+  category?: string;
+  seat_label?: string;
+  seat_tier?: string;
+  seat_price?: number;
+  order_no?: string;
+  expire_at?: string;
+  ticket_price?: number;
 }
 
-// 订单（前端展示用）
 export interface Order {
   id: number;
   ticket_id: number;
@@ -87,37 +90,50 @@ export interface Order {
   quantity: number;
   status: 'PENDING' | 'CONFIRMED' | 'CANCELLED' | 'EXPIRED';
   event_date: string;
+  created_at: string;
+  category: string;
+  seat_label: string;
+  seat_tier: string;
+  seat_price: number;
+  order_no: string;
+  expire_at: string;    // PENDING 支付截止时间
+  ticket_price: number; // 票面单价
 }
 
 export interface ViewMyOrdersBackendResponse extends BackendResponse {
   arr?: BackendOrder[];
 }
 
-// 下单请求
-export interface OrderRequest {
-  type: 5;
-  token: string;
-  index: string; // 后端用 index 而非 ticket_id
+// ── Seats ─────────────────────────────────────────────────────────────────────
+
+export interface Seat {
+  id: number;
+  label: string;   // e.g. "A1"
+  row: string;
+  col: number;
+  tier: 'VIP' | 'Standard' | 'Economy';
+  price: number;
+  status: 'AVAILABLE' | 'SOLD';
 }
 
-// 取消请求
-export interface CancelRequest {
-  type: 7;
-  token: string;
-  index: string; // 后端用 index 表示 reservation_id
+export interface ViewSeatsBackendResponse extends BackendResponse {
+  has_seats: boolean;
+  arr?: Seat[];
+  num?: number;
 }
 
-// 用户信息
+// ── User / Theme ──────────────────────────────────────────────────────────────
+
 export interface User {
   tel: string;
   username: string;
   token: string;
 }
 
-// 主题类型
 export type Theme = 'light' | 'dark';
 
-// 工具函数：将后端票务格式转换为前端格式
+// ── Normalizers ───────────────────────────────────────────────────────────────
+
 export function normalizeTicket(t: BackendTicket): Ticket {
   return {
     id: parseInt(t.tk_id),
@@ -126,19 +142,24 @@ export function normalizeTicket(t: BackendTicket): Ticket {
     total_seats: parseInt(t.max),
     available_seats: parseInt(t.num),
     event_date: t.use_date,
-    status: parseInt(t.status),
+    // 详情接口的票状态在 tk_status（status 为协议字段 OK/ERR）；列表接口仍是 status
+    status: parseInt(t.tk_status ?? t.status),
+    cover_image: t.cover_image,
+    category: (t.category as TicketCategory) || 'concert',
+    price: t.price ?? 0,
+    city: t.city || '',
+    artist: t.artist || '',
+    description: t.description,
+    notice: t.notice,
+    hot: t.hot,
   };
 }
 
-// 工具函数：将后端订单格式转换为前端格式
 export function normalizeOrder(o: BackendOrder): Order {
   const statusMap: Record<string, Order['status']> = {
-    PENDING: 'PENDING',
-    CONFIRMED: 'CONFIRMED',
-    CANCELLED: 'CANCELLED',
-    EXPIRED: 'EXPIRED',
-    '0': 'CANCELLED',
-    '1': 'CONFIRMED',
+    PENDING: 'PENDING', CONFIRMED: 'CONFIRMED',
+    CANCELLED: 'CANCELLED', EXPIRED: 'EXPIRED',
+    '0': 'CANCELLED', '1': 'CONFIRMED',
   };
   return {
     id: parseInt(o.reservation_id),
@@ -148,5 +169,13 @@ export function normalizeOrder(o: BackendOrder): Order {
     quantity: parseInt(o.num),
     status: statusMap[o.status] || 'PENDING',
     event_date: o.use_date || '',
+    created_at: o.created_at || '',
+    category: o.category || 'concert',
+    seat_label: o.seat_label || '',
+    seat_tier: o.seat_tier || '',
+    seat_price: o.seat_price ?? 0,
+    order_no: o.order_no || '',
+    expire_at: o.expire_at || '',
+    ticket_price: o.ticket_price ?? 0,
   };
 }

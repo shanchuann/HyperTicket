@@ -1,0 +1,255 @@
+/* SeatMap */
+
+.seatmap-overlay {
+  position: fixed;
+  inset: 0;
+  background: oklch(0 0 0 / 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: var(--z-modal);
+  padding: var(--space-4);
+}
+
+.seatmap-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  box-shadow: var(--shadow-lg);
+  width: 100%;
+  max-width: 680px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow: hidden;
+}
+
+.seatmap-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: var(--space-5) var(--space-5) var(--space-4);
+  border-bottom: 1px solid var(--color-divider);
+  flex-shrink: 0;
+}
+
+.seatmap-title {
+  font-size: var(--text-h4);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-primary);
+}
+
+.seatmap-subtitle {
+  font-size: var(--text-body-sm);
+  color: var(--color-text-tertiary);
+  margin-top: 2px;
+}
+
+.seatmap-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px; height: 32px;
+  background: none; border: none;
+  color: var(--color-text-secondary);
+  cursor: pointer; border-radius: var(--radius-sm);
+  flex-shrink: 0;
+  transition: background var(--duration-fast);
+}
+.seatmap-close:hover { background: var(--color-bg); }
+
+/* Stage */
+.seatmap-stage {
+  text-align: center;
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.08em;
+  padding: var(--space-3) var(--space-5) var(--space-2);
+  background: var(--color-bg);
+  border-bottom: 2px solid var(--color-border);
+  margin: var(--space-4) var(--space-5) 0;
+  flex-shrink: 0;
+}
+
+/* Grid */
+.seatmap-grid-wrapper {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-3) var(--space-5);
+}
+
+.seatmap-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.seatmap-row {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.seatmap-row-label {
+  width: 20px;
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  color: var(--color-text-tertiary);
+  text-align: right;
+  flex-shrink: 0;
+}
+
+.seatmap-row-seats {
+  display: flex;
+  gap: 3px;
+  flex-wrap: wrap;
+}
+
+/* Seat button */
+.seatmap-seat {
+  width: 28px; height: 28px;
+  display: flex; align-items: center; justify-content: center;
+  border: 1.5px solid transparent;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-family: var(--font-body);
+  cursor: pointer;
+  transition: transform var(--duration-fast), box-shadow var(--duration-fast);
+}
+
+.seatmap-seat:not(.sold):hover { transform: scale(1.15); }
+
+/* Tier colors */
+.seatmap-seat.tier-vip         { background: oklch(0.90 0.08 55); border-color: oklch(0.70 0.10 55); color: oklch(0.35 0.08 55); }
+.seatmap-seat.tier-standard    { background: oklch(0.88 0.06 210); border-color: oklch(0.65 0.08 210); color: oklch(0.30 0.07 210); }
+.seatmap-seat.tier-economy     { background: oklch(0.92 0.02 210); border-color: oklch(0.75 0.03 210); color: oklch(0.50 0.02 210); }
+
+.seatmap-seat.sold             { background: var(--color-bg); border-color: var(--color-divider); color: var(--color-text-disabled); cursor: not-allowed; opacity: 0.5; }
+.seatmap-seat.selected         { background: var(--color-primary) !important; border-color: var(--color-primary) !important; color: white !important; box-shadow: 0 0 0 2px oklch(from var(--color-primary) l c h / 0.3); }
+
+/* Legend */
+.seatmap-legend {
+  display: flex;
+  gap: var(--space-4);
+  justify-content: center;
+  padding: var(--space-3) var(--space-5);
+  border-top: 1px solid var(--color-divider);
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+
+.seatmap-legend-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  font-size: var(--text-caption);
+  color: var(--color-text-secondary);
+}
+
+.seatmap-legend-dot {
+  width: 12px; height: 12px;
+  border-radius: 2px;
+  border: 1.5px solid transparent;
+}
+
+.seatmap-legend-dot.tier-vip      { background: oklch(0.90 0.08 55); border-color: oklch(0.70 0.10 55); }
+.seatmap-legend-dot.tier-standard { background: oklch(0.88 0.06 210); border-color: oklch(0.65 0.08 210); }
+.seatmap-legend-dot.tier-economy  { background: oklch(0.92 0.02 210); border-color: oklch(0.75 0.03 210); }
+.seatmap-legend-dot.sold          { background: var(--color-bg); border-color: var(--color-divider); opacity: 0.5; }
+.seatmap-legend-dot.selected      { background: var(--color-primary); border-color: var(--color-primary); }
+
+/* Error */
+.seatmap-error {
+  margin: 0 var(--space-5);
+  padding: var(--space-2) var(--space-3);
+  background: oklch(from var(--color-error) l c h / 0.08);
+  border: 1px solid var(--color-error);
+  color: var(--color-error);
+  font-size: var(--text-body-sm);
+  flex-shrink: 0;
+}
+
+/* Footer */
+.seatmap-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  padding: var(--space-4) var(--space-5);
+  border-top: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.seatmap-selection {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.seatmap-sel-label {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-weight: var(--weight-semibold);
+  color: var(--color-text-primary);
+}
+
+.seatmap-tier-badge {
+  font-size: var(--text-caption);
+  font-weight: var(--weight-medium);
+  padding: 1px 6px;
+  border-radius: 2px;
+}
+
+.seatmap-tier-badge.tier-vip      { background: oklch(0.90 0.08 55); color: oklch(0.35 0.08 55); }
+.seatmap-tier-badge.tier-standard { background: oklch(0.88 0.06 210); color: oklch(0.30 0.07 210); }
+.seatmap-tier-badge.tier-economy  { background: oklch(0.92 0.02 210); color: oklch(0.50 0.02 210); }
+
+.seatmap-sel-price {
+  font-size: var(--text-h4);
+  font-weight: var(--weight-bold);
+  color: var(--color-primary);
+}
+
+.seatmap-sel-hint {
+  font-size: var(--text-body-sm);
+  color: var(--color-text-tertiary);
+}
+
+.seatmap-confirm-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: var(--space-2) var(--space-6);
+  background: var(--color-primary);
+  border: none;
+  color: white;
+  font-family: var(--font-body);
+  font-size: var(--text-body-sm);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: background var(--duration-fast) var(--ease-out-quart);
+  white-space: nowrap;
+}
+
+.seatmap-confirm-btn:hover:not(:disabled) { background: var(--color-primary-hover); }
+.seatmap-confirm-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Loading / no-seats */
+.seatmap-loading, .seatmap-no-seats {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-10);
+  color: var(--color-text-secondary);
+  font-size: var(--text-body-sm);
+}
+
+@media (max-width: 640px) {
+  .seatmap-seat { width: 24px; height: 24px; font-size: 9px; }
+  .seatmap-stage { margin: var(--space-3) var(--space-3) 0; }
+  .seatmap-grid-wrapper { padding: var(--space-3); }
+}

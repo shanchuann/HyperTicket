@@ -53,7 +53,9 @@ wss.on('connection', (ws, req) => {
   tcp.on('error', (err) => {
     console.error(`[Bridge] TCP error: ${err.message}`);
     if (ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ success: false, message: '后端连接失败: ' + err.message }));
+      // 必须与后端协议一致（status/reason）——前端 client.ts 只识别这两个字段，
+      // 否则 reason 为 undefined，用户只能看到笼统的"请求失败"
+      ws.send(JSON.stringify({ status: 'ERR', reason: '票务服务暂时不可用，请稍后重试' }));
       ws.close();
     }
   });

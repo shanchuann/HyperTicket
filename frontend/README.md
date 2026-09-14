@@ -6,12 +6,12 @@ HyperTicket 高性能票务系统的 Web 前端界面
 
 | 技术 | 版本 | 用途 |
 |------|------|------|
-| React | ^18.x | UI 框架 |
-| TypeScript | ^5.x | 类型安全 |
-| Vite | ^5.x | 构建工具 |
-| React Router | ^6.x | 客户端路由 |
-| Framer Motion | ^11.x | 动画库 |
-| Lucide React | ^0.x | 图标库 |
+| React | ^19.x | UI 框架 |
+| TypeScript | ~6.x | 类型安全 |
+| Vite | ^8.x | 构建工具 |
+| React Router | ^7.x | 客户端路由 |
+| Framer Motion | ^12.x | 动画库 |
+| Lucide React | ^1.x | 图标库 |
 
 ## 项目结构
 
@@ -174,3 +174,9 @@ VITE_WS_URL=ws://localhost:8080
 - 所有交互元素支持键盘导航
 - 动画提供 `prefers-reduced-motion` 降级方案
 - 图标使用 Lucide React，不使用表情符号
+
+## 关联服务
+
+- 日志 AI 检测 UI 为独立应用（`tools/log-ai-detector-ui/`），不在本项目内。
+  开发时 vite.config.ts 已配置 `/log-ai-detector` 代理至 `127.0.0.1:7070`，
+  启动 `scripts/log-ai-detector --serve` 后可经 `http://localhost:3000/log-ai-detector/` 访问。

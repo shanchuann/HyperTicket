@@ -3,19 +3,8 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Loader2 } from 'lucide-react';
 import { authApi } from '../../api/auth';
 import { useAuth } from '../../hooks/useAuth';
+import { catchError } from '../../utils/errors';
 import './AuthForms.css';
-
-// 后端错误码 → 用户友好提示
-const errorMessages: Record<string, string> = {
-  WEAK_PASSWORD: '密码强度不足，请使用包含大小写字母、数字的组合',
-  DB_INSERT: '该手机号已被注册，请直接登录',
-  DB_UNAVAILABLE: '服务暂时不可用，请稍后再试',
-  INVALID_INPUT: '输入信息有误，请检查后重试',
-  RATE_LIMITED: '操作过于频繁，请稍后再试',
-};
-
-const translateError = (message: string) =>
-  errorMessages[message] ?? message;
 
 const Register = () => {
   const navigate = useNavigate();
@@ -79,7 +68,7 @@ const Register = () => {
       login({ tel: formData.tel, username: response.username || formData.username, token }, token);
       navigate('/customer');
     } catch (error) {
-      setAuthError(translateError(error instanceof Error ? error.message : '注册失败，请稍后再试'));
+      setAuthError(catchError(error, '注册失败，请稍后再试'));
     } finally {
       setIsLoading(false);
     }

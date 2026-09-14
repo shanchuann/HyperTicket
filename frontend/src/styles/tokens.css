@@ -26,9 +26,9 @@
   --color-divider: oklch(0.92 0.008 210);
 
   --color-text-primary: oklch(0.25 0.02 210);
-  --color-text-secondary: oklch(0.50 0.02 210);
-  --color-text-tertiary: oklch(0.65 0.015 210);
-  --color-text-disabled: oklch(0.75 0.01 210);
+  --color-text-secondary: oklch(0.42 0.025 210);
+  --color-text-tertiary: oklch(0.52 0.02 210);
+  --color-text-disabled: oklch(0.68 0.012 210);
 
   /* Dark Mode - Neutrals */
   --color-bg-dark: oklch(0.15 0.01 210);
@@ -38,9 +38,9 @@
   --color-divider-dark: oklch(0.35 0.015 210);
 
   --color-text-primary-dark: oklch(0.98 0 0);
-  --color-text-secondary-dark: oklch(0.85 0.01 210);
-  --color-text-tertiary-dark: oklch(0.65 0.015 210);
-  --color-text-disabled-dark: oklch(0.45 0.01 210);
+  --color-text-secondary-dark: oklch(0.87 0.01 210);
+  --color-text-tertiary-dark: oklch(0.74 0.015 210);
+  --color-text-disabled-dark: oklch(0.52 0.01 210);
 
   /* Typography */
   --font-display: "ZCOOL XiaoWei", "Ma Shan Zheng", serif;

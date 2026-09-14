@@ -11,6 +11,11 @@ export interface AdminTicket {
   total_seats: number;
   available_seats: number;
   status: number;
+  cover_image?: string;
+  category?: string;
+  price?: number;
+  city?: string;
+  artist?: string;
 }
 
 export interface AdminUser {
@@ -49,14 +54,20 @@ export const adminApi = {
     return resp.arr || [];
   },
 
-  async addTicket(title: string, venue: string, eventDate: string, totalSeats: number): Promise<void> {
+  async addTicket(title: string, venue: string, eventDate: string, totalSeats: number, coverImage?: string, category?: string, price?: number, extra?: { city?: string; artist?: string; description?: string; notice?: string }): Promise<void> {
     await wsClient.send<BackendResponse>({
       type: 10,
       admin_token: getAdminToken(),
-      title,
-      venue,
+      title, venue,
       event_date: eventDate,
       total_seats: totalSeats,
+      cover_image: coverImage || '',
+      category: category || 'concert',
+      price: price || 0,
+      city: extra?.city || '北京',
+      artist: extra?.artist || '',
+      description: extra?.description || '',
+      notice: extra?.notice || '',
     });
   },
 
@@ -90,11 +101,14 @@ export const adminApi = {
   },
 
   async blacklist(tel: string, action: 'add' | 'remove'): Promise<void> {
+    await wsClient.send<BackendResponse>({ type: 14, admin_token: getAdminToken(), tel, action });
+  },
+
+  async changePassword(newPassword: string): Promise<void> {
     await wsClient.send<BackendResponse>({
-      type: 14,
+      type: 15,
       admin_token: getAdminToken(),
-      tel,
-      action,
+      new_password: newPassword,
     });
   },
 };

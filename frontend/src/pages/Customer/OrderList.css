@@ -97,6 +97,17 @@
   gap: var(--space-4);
 }
 
+.order-card-clickable {
+  cursor: pointer;
+  transition: border-color var(--duration-fast) var(--ease-out-quart),
+              box-shadow var(--duration-fast) var(--ease-out-quart);
+}
+
+.order-card-clickable:hover {
+  border-color: var(--color-primary);
+  box-shadow: var(--shadow-md);
+}
+
 .order-header {
   display: flex;
   align-items: center;
@@ -205,6 +216,24 @@
   cursor: not-allowed;
 }
 
+.order-btn-delete {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  background: none;
+  color: var(--color-error);
+  border: 1px solid var(--color-error);
+  opacity: 0.7;
+}
+
+.order-btn-delete:hover:not(:disabled) {
+  opacity: 1;
+  background: oklch(from var(--color-error) l c h / 0.06);
+}
+
+.order-btn-delete:disabled { opacity: 0.4; cursor: not-allowed; }
+
 /* Responsive */
 @media (max-width: 767px) {
   .order-list-container {
@@ -227,3 +256,22 @@
     flex-direction: column;
   }
 }
+
+/* ── v2：待支付 ── */
+.order-countdown {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-body-sm);
+  color: var(--color-warning);
+  font-variant-numeric: tabular-nums;
+}
+.order-btn-pay {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--color-primary);
+  color: oklch(1 0 0);
+  border: none;
+}
+.order-btn-pay:hover:not(:disabled) { background: var(--color-primary-hover); }

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Sun, Moon, Ticket, ShoppingBag, LogOut, Menu, X } from 'lucide-react';
+import { Sun, Moon, Ticket, ShoppingBag, Heart, LogOut, Menu, X } from 'lucide-react';
 import { useTheme } from '../../hooks/useTheme';
 import { useAuth } from '../../hooks/useAuth';
 import ConnectionStatus from '../../components/ConnectionStatus';
@@ -29,10 +29,12 @@ const CustomerLayout = () => {
 
   const navItems = [
     { path: '/customer', label: '票务浏览', icon: Ticket },
+    { path: '/customer/favorites', label: '我的想看', icon: Heart },
     { path: '/customer/orders', label: '我的订单', icon: ShoppingBag },
   ];
 
   const isActive = (path: string) => {
+    if (path === '/customer') return location.pathname === '/customer';
     return location.pathname === path || location.pathname.startsWith(path + '/');
   };
 

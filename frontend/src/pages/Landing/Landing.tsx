@@ -55,30 +55,32 @@ const Landing = () => {
     }
   ];
 
+  // 实测数据（WSL + Windows MySQL，io_threads=1，worker_threads=8）
+  // 测试方法：bench_hyperticket.py，100 并发 × 10,000 次 VIEW 请求
   const advantages = [
     {
       icon: Zap,
       title: '高性能',
-      description: '单实例 QPS > 10,000，P99 延迟 < 100ms',
-      metric: '10K+ QPS'
+      description: '实测 10 并发 QPS 1,973，P50 延迟 1.8ms，epoll 事件驱动架构',
+      metric: '~2K QPS'
     },
     {
       icon: Shield,
       title: '安全可靠',
-      description: '企业级会话管理，事务保证防超卖',
+      description: '预备语句防 SQL 注入，SELECT FOR UPDATE 事务锁防超卖，bcrypt 密码哈希',
       metric: '0 超卖'
     },
     {
       icon: Activity,
-      title: '实时监控',
-      description: 'Prometheus Metrics，健康检查，可观测性完整',
-      metric: '99.9% 可用'
+      title: '低延迟',
+      description: '实测 P50 = 1.8ms，P99 = 24.7ms（10 并发），双缓冲异步日志不阻塞业务',
+      metric: 'P99 < 25ms'
     },
     {
       icon: Layers,
       title: '水平扩展',
-      description: 'Redis Session 持久化，支持多实例部署',
-      metric: '无限扩展'
+      description: 'Redis Session 持久化，MySQL 连接池，支持多实例部署',
+      metric: '无状态扩展'
     }
   ];
 

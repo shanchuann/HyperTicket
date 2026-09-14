@@ -145,10 +145,11 @@
 .ticket-card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  padding: var(--space-5);
+  padding: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: 0;
   transition: border-color var(--duration-fast) var(--ease-out-quart),
               box-shadow var(--duration-fast) var(--ease-out-quart);
 }
@@ -156,6 +157,33 @@
 .ticket-card:hover {
   border-color: var(--color-primary);
   box-shadow: 0 4px 12px oklch(0 0 0 / 0.08);
+}
+
+.ticket-cover {
+  width: 100%;
+  height: 160px;
+  overflow: hidden;
+  flex-shrink: 0;
+}
+
+.ticket-cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform var(--duration-base) var(--ease-out-quart);
+}
+
+.ticket-card:hover .ticket-cover-img {
+  transform: scale(1.03);
+}
+
+.ticket-card-body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding: var(--space-5);
+  flex: 1;
 }
 
 .ticket-card-header {
@@ -306,3 +334,103 @@
     grid-template-columns: 1fr;
   }
 }
+
+/* ── v2：城市筛选 ── */
+.ticket-cities {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+.ticket-city-btn {
+  padding: 4px 12px;
+  background: none;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-body-sm);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all var(--duration-fast);
+}
+.ticket-city-btn:hover { border-color: var(--color-primary); color: var(--color-primary); }
+.ticket-city-btn.active {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: oklch(1 0 0);
+}
+
+/* ── v2：热门榜 ── */
+.ticket-hot-section {
+  margin-bottom: var(--space-6);
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  padding: var(--space-4);
+}
+.ticket-hot-header {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: var(--text-body);
+  font-weight: var(--weight-semibold);
+  color: oklch(0.6 0.18 35);
+  margin-bottom: var(--space-3);
+}
+.ticket-hot-list { display: flex; flex-direction: column; gap: var(--space-1); }
+.ticket-hot-item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-2);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  border-radius: var(--radius-sm);
+  transition: background var(--duration-fast);
+}
+.ticket-hot-item:hover { background: var(--color-bg); }
+.ticket-hot-rank {
+  width: 20px;
+  text-align: center;
+  font-weight: var(--weight-bold);
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+.ticket-hot-rank.rank-1 { color: oklch(0.6 0.2 25); }
+.ticket-hot-rank.rank-2 { color: oklch(0.65 0.16 45); }
+.ticket-hot-rank.rank-3 { color: oklch(0.7 0.13 75); }
+.ticket-hot-title {
+  font-size: var(--text-body-sm);
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+  min-width: 0;
+}
+.ticket-hot-city {
+  font-size: var(--text-caption);
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+.ticket-hot-count {
+  font-size: var(--text-caption);
+  color: oklch(0.6 0.18 35);
+  flex-shrink: 0;
+}
+
+/* ── v2：收藏按钮 / 可点卡片 ── */
+.ticket-card-clickable { cursor: pointer; }
+.ticket-fav-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px; height: 28px;
+  background: none;
+  border: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  transition: all var(--duration-fast);
+}
+.ticket-fav-btn:hover { color: oklch(0.6 0.2 15); background: var(--color-bg); }
+.ticket-fav-btn.active { color: oklch(0.6 0.2 15); }

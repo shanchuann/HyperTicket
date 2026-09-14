@@ -7,5 +7,11 @@ export default defineConfig({
   server: {
     port: 3000,
     host: true,
+    proxy: {
+      '/log-ai-detector': {
+        target: 'http://127.0.0.1:7070',
+        changeOrigin: true,
+      },
+    },
   },
 })

@@ -1,33 +1,30 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, UserX, UserCheck, Loader2 } from 'lucide-react';
 import { adminApi } from '../../api/admin';
 import type { AdminUser } from '../../api/admin';
+import { catchError } from '../../utils/errors';
+import { useToast } from '../../components/ToastContext';
 import './UserManage.css';
 
 const maskTel = (tel: string) =>
   tel.length === 11 ? tel.slice(0, 3) + '****' + tel.slice(7) : tel;
 
 const UserManage = () => {
+  const toast = useToast();
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [filter, setFilter] = useState<'all' | 'normal' | 'blacklisted'>('all');
   const [operating, setOperating] = useState<number | null>(null);
 
-  const loadUsers = useCallback(async () => {
-    setLoading(true);
-    setError('');
-    try {
-      setUsers(await adminApi.listUsers());
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '加载失败');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => { loadUsers(); }, [loadUsers]);
+  useEffect(() => {
+    let cancelled = false;
+    adminApi.listUsers()
+      .then(data => { if (!cancelled) setUsers(data); })
+      .catch(e => { if (!cancelled) toast.error(catchError(e, '加载用户列表失败')); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [toast]);
 
   const handleBlacklist = async (user: AdminUser) => {
     const action = user.status === 1 ? 'add' : 'remove';
@@ -40,8 +37,9 @@ const UserManage = () => {
       setUsers(prev =>
         prev.map(u => u.user_id === user.user_id ? { ...u, status: action === 'add' ? 0 : 1 } : u)
       );
+      toast.success(`「${user.username}」已${label}`);
     } catch (e) {
-      alert(e instanceof Error ? e.message : '操作失败');
+      toast.error(catchError(e, '操作失败'));
     } finally {
       setOperating(null);
     }
@@ -80,13 +78,6 @@ const UserManage = () => {
           <span className="summary-badge blacklisted">黑名单 {blackCount}</span>
         </div>
       </div>
-
-      {error && (
-        <div className="user-manage-error">
-          {error}
-          <button onClick={loadUsers}>重试</button>
-        </div>
-      )}
 
       <div className="user-manage-toolbar">
         <div className="user-manage-search">

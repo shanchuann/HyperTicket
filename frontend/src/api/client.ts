@@ -1,6 +1,7 @@
 // WebSocket 客户端 - 连接桥接服务器，转发至后端 TCP
 
 import type { BackendResponse } from '../types';
+import { reportEvent } from '../utils/monitor';
 
 type Callback = {
   resolve: (r: BackendResponse) => void;
@@ -16,79 +17,136 @@ class WebSocketClient {
   private reconnectCount = 0;
   private readonly maxReconnect = 5;
   private pendingMessages: string[] = [];
+  private connectingPromise: Promise<void> | null = null;
 
   constructor(url: string) {
     this.url = url;
-    this.connect();
+    this.connect().catch(() => {});
   }
 
   connect(): Promise<void> {
-    return new Promise((resolve, reject) => {
-      if (this.ws?.readyState === WebSocket.OPEN) {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      return Promise.resolve();
+    }
+    // 已有连接正在进行中，复用同一个 Promise，避免创建多个 WebSocket
+    if (this.connectingPromise) {
+      return this.connectingPromise;
+    }
+
+    this.connectingPromise = new Promise((resolve, reject) => {
+      let settled = false;
+      const settle = () => { settled = true; this.connectingPromise = null; };
+
+      const ws = new WebSocket(this.url);
+      this.ws = ws;
+
+      ws.onopen = () => {
+        console.log('[WS] Connected to bridge');
+        this.reconnectCount = 0;
+        settle();
+        for (const msg of this.pendingMessages) {
+          ws.send(msg);
+        }
+        this.pendingMessages = [];
         resolve();
-        return;
-      }
+      };
 
-      try {
-        this.ws = new WebSocket(this.url);
+      ws.onmessage = (event) => {
+        const text = event.data as string;
+        console.log('[WS] Received:', text.substring(0, 150));
 
-        this.ws.onopen = () => {
-          console.log('[WS] Connected to bridge');
-          this.reconnectCount = 0;
-          for (const msg of this.pendingMessages) {
-            this.ws!.send(msg);
-          }
-          this.pendingMessages = [];
-          resolve();
-        };
+        // 按顺序消费队列；跳过已超时的槽位（其 reject 已触发），继续消费直到找到有效回调
+        while (this.queue.length > 0 && this.queue[0].timedOut) {
+          this.queue.shift();
+        }
 
-        this.ws.onmessage = (event) => {
-          const text = event.data as string;
-          console.log('[WS] Received:', text.substring(0, 150));
+        const cb = this.queue.shift();
+        if (!cb) return;
 
-          // 按顺序消费队列；跳过已超时的槽位（其 reject 已触发），继续消费直到找到有效回调
-          while (this.queue.length > 0 && this.queue[0].timedOut) {
-            this.queue.shift();
-          }
-
-          const cb = this.queue.shift();
-          if (!cb) return;
-
-          clearTimeout(cb.timeout);
-          try {
-            const resp: BackendResponse = JSON.parse(text);
-            if (resp.status === 'OK') {
-              cb.resolve(resp);
-            } else {
-              cb.reject(new Error(resp.reason || '请求失败'));
+        clearTimeout(cb.timeout);
+        try {
+          const resp: BackendResponse = JSON.parse(text);
+          if (resp.status === 'OK') {
+            cb.resolve(resp);
+          } else {
+            const reason = resp.reason || '请求失败';
+            // 登录过期自动跳转
+            if (reason === 'UNAUTHORIZED') {
+              localStorage.removeItem('token');
+              localStorage.removeItem('user');
+              window.location.replace('/auth/login');
+              return;
             }
-          } catch {
-            cb.reject(new Error('响应解析失败'));
+            if (reason === 'ADMIN_UNAUTHORIZED') {
+              localStorage.removeItem('admin_token');
+              localStorage.removeItem('admin_user');
+              window.location.replace('/admin/login');
+              return;
+            }
+            cb.reject(new Error(reason));
           }
-        };
+        } catch {
+          reportEvent({
+            level: 'ERROR',
+            source: 'ws-client',
+            message: '后端响应 JSON 解析失败',
+            context: { raw: text.slice(0, 300) },
+          });
+          cb.reject(new Error('响应解析失败'));
+        }
+      };
 
-        this.ws.onerror = () => {
+      ws.onerror = () => {
+        reportEvent({
+          level: 'ERROR',
+          source: 'ws-client',
+          message: `WebSocket 连接错误: ${this.url}`,
+          context: { reconnectCount: this.reconnectCount, queueLength: this.queue.length },
+        });
+        if (!settled) {
+          settle();
           reject(new Error('WebSocket 连接错误'));
-        };
+        }
+      };
 
-        this.ws.onclose = () => {
-          console.log('[WS] Connection closed');
-          const pending = [...this.queue];
-          this.queue = [];
-          for (const cb of pending) {
-            clearTimeout(cb.timeout);
-            if (!cb.timedOut) cb.reject(new Error('连接已断开'));
-          }
-          this.scheduleReconnect();
-        };
-      } catch (e) {
-        reject(e);
-      }
+      ws.onclose = () => {
+        console.log('[WS] Connection closed');
+        if (!settled) {
+          settle();
+          reject(new Error('连接已关闭'));
+        } else {
+          this.connectingPromise = null;
+        }
+        const pending = [...this.queue];
+        this.queue = [];
+        if (pending.some((cb) => !cb.timedOut)) {
+          reportEvent({
+            level: 'ERROR',
+            source: 'ws-client',
+            message: `WebSocket 连接断开，${pending.filter((cb) => !cb.timedOut).length} 个未完成请求被拒绝`,
+            context: { reconnectCount: this.reconnectCount },
+          });
+        }
+        for (const cb of pending) {
+          clearTimeout(cb.timeout);
+          if (!cb.timedOut) cb.reject(new Error('网络连接已断开，请刷新重试'));
+        }
+        this.scheduleReconnect();
+      };
     });
+
+    return this.connectingPromise;
   }
 
   private scheduleReconnect() {
-    if (this.reconnectCount >= this.maxReconnect) return;
+    if (this.reconnectCount >= this.maxReconnect) {
+      reportEvent({
+        level: 'FATAL',
+        source: 'ws-client',
+        message: `WebSocket 重连 ${this.maxReconnect} 次全部失败，已停止重连: ${this.url}`,
+      });
+      return;
+    }
     this.reconnectCount++;
     const delay = Math.min(1000 * this.reconnectCount, 5000);
     console.log(`[WS] Reconnecting in ${delay}ms (${this.reconnectCount}/${this.maxReconnect})`);
@@ -103,7 +161,13 @@ class WebSocketClient {
         timedOut: false,
         timeout: setTimeout(() => {
           cb.timedOut = true;
-          reject(new Error('请求超时'));
+          reportEvent({
+            level: 'ERROR',
+            source: 'ws-client',
+            message: '请求超时（15s 未收到后端响应）',
+            context: { payload: JSON.stringify(payload).slice(0, 200), wsState: this.ws?.readyState ?? -1 },
+          });
+          reject(new Error('请求超时，请检查网络连接'));
         }, 15000),
       };
       this.queue.push(cb);
@@ -128,6 +192,6 @@ class WebSocketClient {
   }
 }
 
-const WS_URL = (import.meta as any).env?.VITE_WS_URL || 'ws://localhost:8080';
+const WS_URL = import.meta.env.VITE_WS_URL || 'ws://localhost:8080';
 export const wsClient = new WebSocketClient(WS_URL);
 export default wsClient;

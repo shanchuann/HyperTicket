@@ -49,7 +49,7 @@ Item {
                             ColumnLayout {
                                 Layout.fillWidth: true; spacing: 4
                                 Text { text: modelData.title; font.pixelSize: 16; font.bold: true; color: Theme.color.onSurfaceColor }
-                                Text { text: modelData.venue + "  ·  " + modelData.event_date; font.pixelSize: 13; color: Theme.color.onSurfaceVariantColor }
+                                Text { text: (modelData.city ? modelData.city + "  ·  " : "") + modelData.venue + "  ·  " + modelData.event_date + (modelData.price ? "  ·  ￥" + modelData.price + " 起" : ""); font.pixelSize: 13; color: Theme.color.onSurfaceVariantColor }
                                 Text { text: "剩余 " + modelData.available_seats + " / " + modelData.total_seats + " 张"; font.pixelSize: 13; color: Theme.color.secondary }
                             }
                             Text {
@@ -110,6 +110,9 @@ Item {
                 TextField { id: venueF;  label: "场馆";                  placeholderText: "如：国家体育场（鸟巢）"; width: parent.width }
                 TextField { id: dateF;   label: "演出日期 (YYYY-MM-DD)"; placeholderText: "2026-08-15";              width: parent.width }
                 TextField { id: seatsF;  label: "总座位数";              placeholderText: "如：80000";               width: parent.width }
+                TextField { id: cityF;   label: "城市";                  placeholderText: "如：北京";                 width: parent.width }
+                TextField { id: artistF; label: "艺人/团体（可选）";      placeholderText: "如：周杰伦";               width: parent.width }
+                TextField { id: priceF;  label: "基础票价（元，可选）";    placeholderText: "如：380";                  width: parent.width }
 
                 RowLayout {
                     width: parent.width; spacing: 12
@@ -131,16 +134,20 @@ Item {
                             tcpClient.request(JSON.stringify({
                                 "type": 10, "admin_token": app.adminToken,
                                 "title": titleF.text, "venue": venueF.text,
-                                "event_date": dateF.text, "total_seats": seats
+                                "event_date": dateF.text, "total_seats": seats,
+                                "city": cityF.text.length > 0 ? cityF.text : "北京",
+                                "artist": artistF.text,
+                                "price": parseInt(priceF.text) || 0
                             }), function(s) {
                                 addBtn.busy = false
                                 var resp = JSON.parse(s)
                                 if (resp.status === "OK") {
                                     addOverlay.visible = false
-                                    titleF.text = venueF.text = dateF.text = seatsF.text = ""
+                                    titleF.text = venueF.text = dateF.text = seatsF.text = cityF.text = artistF.text = priceF.text = ""
                                     loadTickets()
                                 } else {
-                                    addErrText.text = resp.reason || "添加失败"
+                                    var errMsgs = { "INVALID_INPUT": "输入有误：请检查日期格式（YYYY-MM-DD，如 2026-10-01）和座位数", "DB_UNAVAILABLE": "服务暂时不可用", "DB_INSERT": "添加失败，请重试", "ADMIN_UNAUTHORIZED": "登录已过期，请重新登录" }
+                                    addErrText.text = errMsgs[resp.reason] || resp.reason || "添加失败"
                                 }
                             })
                         }
@@ -198,7 +205,7 @@ Item {
                             }), function(s) {
                                 var resp = JSON.parse(s)
                                 if (resp.status === "OK") loadTickets()
-                                else app.showError(resp.reason || "下架失败")
+                                else { var errMsgs2 = { "TICKET_NOT_FOUND": "该票务不存在", "DB_UPDATE": "下架失败，请重试", "ADMIN_UNAUTHORIZED": "登录已过期" }; app.showError(errMsgs2[resp.reason] || resp.reason || "下架失败") }
                             })
                         }
                     }

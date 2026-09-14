@@ -2,30 +2,31 @@ import { useState, useEffect } from 'react';
 import { Ticket, Users, ShoppingCart, TrendingUp } from 'lucide-react';
 import { adminApi } from '../../api/admin';
 import type { AdminStats, AdminTicket } from '../../api/admin';
+import { catchError } from '../../utils/errors';
+import { useToast } from '../../components/ToastContext';
 import './Dashboard.css';
 
 const Dashboard = () => {
+  const toast = useToast();
   const [stats, setStats] = useState<AdminStats>({ user_count: 0, ticket_count: 0, order_count: 0, today_orders: 0 });
   const [tickets, setTickets] = useState<AdminTicket[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
-      setError('');
       try {
         const [s, t] = await Promise.all([adminApi.stats(), adminApi.listTickets()]);
         setStats(s);
         setTickets(t);
       } catch (e) {
-        setError(e instanceof Error ? e.message : '加载失败');
+        toast.error(catchError(e, '数据加载失败'));
       } finally {
         setLoading(false);
       }
     };
     load();
-  }, []);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const statCards = [
     { title: '在售票务', value: stats.ticket_count, icon: Ticket,      color: 'var(--color-primary)' },
@@ -50,17 +51,6 @@ const Dashboard = () => {
         <div className="dashboard-loading">
           <div className="loading-spinner" />
           <p>加载中...</p>
-        </div>
-      </div>
-    );
-  }
-
-  if (error) {
-    return (
-      <div className="admin-dashboard">
-        <div className="dashboard-error">
-          <p>加载失败：{error}</p>
-          <button onClick={() => window.location.reload()}>重试</button>
         </div>
       </div>
     );

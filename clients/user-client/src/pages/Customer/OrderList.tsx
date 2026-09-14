@@ -34,6 +34,23 @@ const OrderList = () => {
     loadOrders();
   }, [navigate]);
 
+  const handlePay = async (order: Order) => {
+    const token = localStorage.getItem('token');
+    if (!token) return;
+    try {
+      const p = await orderApi.payAndWait(token, order.id);
+      if (p.payment_status === 'SUCCESS') {
+        setOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: 'CONFIRMED' as const, expire_at: '' } : o));
+      } else {
+        setActionMsg(p.payment_status === 'FAILED' ? '支付失败，请重试' : '订单已失效，金额已退款');
+        orderApi.getMyOrders(token).then(setOrders).catch(() => {});
+      }
+    } catch {
+      // 结果未知或订单可能已超时回收，重新拉取
+      orderApi.getMyOrders(token).then(setOrders).catch(() => {});
+    }
+  };
+
   const handleCancel = async (order: Order) => {
     const token = localStorage.getItem('token');
     if (!token) return;
@@ -66,7 +83,7 @@ const OrderList = () => {
   const getStatusConfig = (status: Order['status']) => {
     const configs: Record<Order['status'], { label: string; icon: typeof Clock; color: string; bgColor: string }> = {
       PENDING: {
-        label: '待确认',
+        label: '待支付',
         icon: Clock,
         color: 'var(--color-warning)',
         bgColor: 'oklch(0.90 0.12 95 / 0.1)',
@@ -182,6 +199,11 @@ const OrderList = () => {
 
                 {(order.status === 'PENDING' || order.status === 'CONFIRMED') && (
                   <div className="order-actions">
+                    {order.status === 'PENDING' && (
+                      <button className="order-btn order-btn-primary" onClick={() => handlePay(order)}>
+                        去支付
+                      </button>
+                    )}
                     <button
                       className="order-btn order-btn-secondary"
                       disabled={cancellingId === order.id}

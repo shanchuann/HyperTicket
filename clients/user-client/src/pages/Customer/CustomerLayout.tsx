@@ -42,7 +42,8 @@ const CustomerLayout = () => {
       <header className={`customer-header ${scrolled ? 'scrolled' : ''}`}>
         <div className="customer-header-container">
           <Link to="/customer" className="customer-logo">
-            HyperTicket
+            <span className="customer-logo-mark" aria-hidden="true">H</span>
+            <span>HyperTicket</span>
           </Link>
 
           {/* Desktop Navigation */}

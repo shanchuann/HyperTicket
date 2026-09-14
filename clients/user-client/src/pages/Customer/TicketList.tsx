@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Search, Calendar, MapPin, ChevronRight } from 'lucide-react';
+import { Search, Calendar, MapPin, ChevronRight, Sparkles } from 'lucide-react';
 import { ticketApi } from '../../api/tickets';
 import { orderApi } from '../../api/orders';
 import type { Ticket } from '../../types';
@@ -100,7 +100,17 @@ const TicketList = () => {
   return (
     <div className="ticket-list-container">
       <div className="ticket-list-header">
-        <h1 className="ticket-list-title">票务浏览</h1>
+        <div className="ticket-list-heading-row">
+          <div>
+            <div className="ticket-list-kicker"><Sparkles size={14} /> 精选现场</div>
+            <h1 className="ticket-list-title">找到值得奔赴的现场</h1>
+            <p className="ticket-list-subtitle">按城市、类型或场馆筛选，三步完成预订。</p>
+          </div>
+          <div className="ticket-list-count" aria-live="polite">
+            <strong>{filteredTickets.length}</strong>
+            <span>场可预订</span>
+          </div>
+        </div>
 
         {loadError && (
           <div className="order-msg error">

@@ -34,6 +34,8 @@ namespace hyperticket
 
     IStockCache::DecrResult RedisStockCache::tryDecr(int64_t ticketId, int qty)
     {
+        if (ticketId <= 0 || qty <= 0)
+            return DecrResult::Unavailable;
         try
         {
             redisContext *ctx = nullptr;
@@ -69,6 +71,8 @@ namespace hyperticket
 
     void RedisStockCache::incr(int64_t ticketId, int delta)
     {
+        if (ticketId <= 0 || delta <= 0)
+            return;
         try
         {
             redisContext *ctx = nullptr;
@@ -100,9 +104,10 @@ namespace hyperticket
             RedisConnGuard guard(&ctx, pool_);
 
             std::string key = stockKey(ticketId);
-            // 1 小时 TTL：防止下架/删除的票遗留脏 key；热点票会被持续回填
+            // 异步下单模式下库存 key 不能自然过期：队列尚未落库时若按 DB
+            // 真值重建，会忘掉已排队的预扣减。下架时由业务显式置零。
             redisReply *reply = (redisReply *)redisCommand(
-                ctx, "SETEX %s 3600 %d", key.c_str(), availableSeats);
+                ctx, "SET %s %d", key.c_str(), availableSeats);
             if (reply)
                 freeReplyObject(reply);
         }

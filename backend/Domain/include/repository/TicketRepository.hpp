@@ -124,11 +124,18 @@ namespace hyperticket
         // 库存增减（delta 可正可负）。
         bool adjustSeats(MYSQL *conn, int64_t ticketId, int delta)
         {
-            MysqlStmt st(conn, "UPDATE tickets SET available_seats = available_seats + ? WHERE id = ?");
+            // 库存扣减必须由数据库再次保证非负；即使上层缓存失效或发生
+            // 重复请求，也不能将库存写成负数。InnoDB 行锁保证该条件检查与
+            // 更新在同一条原子语句中完成。
+            MysqlStmt st(conn,
+                "UPDATE tickets SET available_seats = available_seats + ? "
+                "WHERE id = ? AND (? >= 0 OR available_seats >= -?)");
             if (!st.ok()) return false;
             st.bindInt(0, delta);
             st.bindInt(1, ticketId);
-            return st.execute();
+            st.bindInt(2, delta);
+            st.bindInt(3, delta);
+            return st.execute() && st.affectedRows() == 1;
         }
 
         // 是否存在指定票。

@@ -61,6 +61,18 @@ namespace hyperticket
         int success_rate_percent = 100;  // 结算成功率（0-100），<100 用于演练失败路径
     };
 
+    struct OrderQueueConfig
+    {
+        bool enabled = true;
+        std::string stream = "hyperticket:orders";
+        std::string consumer_group = "order-workers";
+        std::string consumer_name = "worker-1";
+        int poll_interval_ms = 20;
+        int batch_size = 32;
+        int max_retries = 5;
+        int claim_idle_ms = 30000;
+    };
+
     struct AppConfig
     {
         DbConfig db;
@@ -70,6 +82,7 @@ namespace hyperticket
         RedisConfig redis;
         MetricsConfig metrics;
         PaymentConfig payment;
+        OrderQueueConfig order_queue;
 
         static AppConfig Load(const std::string &path, std::string *error);
     };

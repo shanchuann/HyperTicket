@@ -35,6 +35,7 @@ namespace hyperticket
         case TICKET_DETAIL:         return ticketDetail(req);
         case PAY_ORDER:             return payOrder(req);
         case PAY_QUERY:             return queryPayment(req);
+        case ORDER_QUERY:           return queryQueuedOrder(req);
         case FAVORITE:              return favorite(req);
         case VIEW_FAVORITES:        return viewFavorites(req);
         case HOT_TICKETS:           return hotTickets(req);

@@ -166,3 +166,18 @@ if(HIREDIS_LIB)
 	target_link_libraries(test_stock_cache PRIVATE ${HIREDIS_LIB})
 endif()
 add_test(NAME test_stock_cache COMMAND $<TARGET_FILE:test_stock_cache>)
+
+add_executable(test_order_queue
+    tests/test_order_queue.cpp
+    backend/Server/src/RedisOrderQueue.cpp
+    backend/Server/src/RedisConnPool.cpp
+    backend/Server/src/MetricsManager.cpp
+    ${CHRONOLITE_SRC}
+)
+target_include_directories(test_order_queue PRIVATE
+    backend/Server/include backend/Domain/include backend/ChronoLite/include)
+target_link_libraries(test_order_queue PRIVATE ${JSONCPP_LIB} Threads::Threads)
+if(HIREDIS_LIB)
+    target_link_libraries(test_order_queue PRIVATE ${HIREDIS_LIB})
+endif()
+add_test(NAME test_order_queue COMMAND $<TARGET_FILE:test_order_queue>)

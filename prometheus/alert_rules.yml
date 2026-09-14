@@ -158,6 +158,26 @@ groups:
           summary: "HyperTicket service is down"
           description: "Instance {{ $labels.instance }} is unreachable"
 
+      - alert: OrderQueueBacklog
+        expr: hyperticket_order_queue_pending > 1000
+        for: 2m
+        labels:
+          severity: warning
+          component: order-queue
+        annotations:
+          summary: "Order queue backlog is growing"
+          description: "Pending asynchronous orders: {{ $value }}"
+
+      - alert: OrderQueueFailures
+        expr: rate(hyperticket_order_queue_failed_total[5m]) > 0
+        for: 1m
+        labels:
+          severity: critical
+          component: order-queue
+        annotations:
+          summary: "Order queue consumer failures detected"
+          description: "Inspect the Redis dead-letter stream and database health"
+
       # QPS 异常告警
       - alert: AbnormalQPS
         expr: |

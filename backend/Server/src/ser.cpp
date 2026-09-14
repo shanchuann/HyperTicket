@@ -7,6 +7,7 @@
 #include "../include/RedisSessionManager.hpp"
 #include "../include/RedisConnPool.hpp"
 #include "../include/RedisStockCache.hpp"
+#include "../include/RedisOrderQueue.hpp"
 #include "../include/MetricsManager.hpp"
 #include "../include/RateLimiter.hpp"
 #include "../include/SchemaInitializer.hpp"
@@ -129,14 +130,35 @@ int main()
         }
     }
 
-    hyperticket::TicketService service(pool, sessionMgr.get(), stockCache.get());
-
-    // 可选：启动 Metrics Manager
+    // 可选：启动 Metrics Manager（队列也会直接上报生产/消费指标）。
     std::unique_ptr<hyperticket::MetricsManager> metrics;
     if (cfg.metrics.enabled)
     {
         LOG_INFO << "Metrics enabled on port " << cfg.metrics.port;
         metrics = std::make_unique<hyperticket::MetricsManager>(cfg.metrics.port);
+    }
+
+    hyperticket::TicketService service(pool, sessionMgr.get(), stockCache.get());
+
+    std::unique_ptr<hyperticket::RedisOrderQueue> orderQueue;
+    if (cfg.order_queue.enabled)
+    {
+        if (!stockRedisPool)
+        {
+            LOG_FATAL << "order queue requires redis.enabled=true and a healthy Redis pool";
+            return 1;
+        }
+        orderQueue = std::make_unique<hyperticket::RedisOrderQueue>(
+            stockRedisPool.get(), cfg.order_queue.stream,
+            cfg.order_queue.consumer_group, cfg.order_queue.consumer_name, metrics.get(),
+            cfg.order_queue.claim_idle_ms);
+        if (!orderQueue->ensureGroup())
+        {
+            LOG_FATAL << "failed to initialize Redis order consumer group";
+            return 1;
+        }
+        service.configureOrderQueue(orderQueue.get(), cfg.order_queue.max_retries);
+        LOG_INFO << "asynchronous Redis Streams ordering enabled";
     }
 
     shanchuan::EventLoop loop;
@@ -265,6 +287,7 @@ int main()
                         case 22: method = "view_favorites"; break;
                         case 23: method = "hot_tickets"; break;
                         case 24: method = "pay_query"; break;
+                        case 25: method = "order_query"; break;
                         default: method = "unknown"; break;
                         }
                     }
@@ -294,6 +317,9 @@ int main()
     // 支付结算：模拟网关异步回调，结算到期的 PROCESSING 流水
     service.configurePayment(cfg.payment.settle_delay_ms, cfg.payment.success_rate_percent);
     scheduler.addRunEvery(cfg.payment.settle_interval_ms, [&service]() { service.settleDuePayments(); });
+    if (orderQueue)
+        scheduler.addRunEvery(cfg.order_queue.poll_interval_ms,
+            [&service, &cfg]() { service.processQueuedOrders(cfg.order_queue.batch_size); });
     scheduler.addRunEvery(60000, [&sessionMgr]() { sessionMgr->purgeExpired(hyperticket::nowMs()); });
 
     // 定期更新 metrics 资源指标

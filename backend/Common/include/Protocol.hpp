@@ -41,6 +41,7 @@ namespace hyperticket
 
         // v3 支付模块
         PAY_QUERY      = 24, // 查询支付结果（前端发起支付后轮询）
+        ORDER_QUERY    = 25, // 查询异步下单请求状态
     };
 
     // 协议字段名常量，避免魔法字符串散落各处。

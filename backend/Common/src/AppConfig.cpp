@@ -171,6 +171,19 @@ namespace hyperticket
             cfg.payment.success_rate_percent = getInt(payment, "success_rate_percent", cfg.payment.success_rate_percent);
         }
 
+        if (root.isMember("order_queue"))
+        {
+            const Json::Value &queue = root["order_queue"];
+            cfg.order_queue.enabled = queue.isMember("enabled") ? queue["enabled"].asBool() : cfg.order_queue.enabled;
+            cfg.order_queue.stream = getString(queue, "stream", cfg.order_queue.stream);
+            cfg.order_queue.consumer_group = getString(queue, "consumer_group", cfg.order_queue.consumer_group);
+            cfg.order_queue.consumer_name = getString(queue, "consumer_name", cfg.order_queue.consumer_name);
+            cfg.order_queue.poll_interval_ms = getInt(queue, "poll_interval_ms", cfg.order_queue.poll_interval_ms);
+            cfg.order_queue.batch_size = getInt(queue, "batch_size", cfg.order_queue.batch_size);
+            cfg.order_queue.max_retries = getInt(queue, "max_retries", cfg.order_queue.max_retries);
+            cfg.order_queue.claim_idle_ms = getInt(queue, "claim_idle_ms", cfg.order_queue.claim_idle_ms);
+        }
+
         // Overlay DB settings from .env (precedence: process env > .env > config.json).
         applyDbEnv(cfg, path);
         return cfg;

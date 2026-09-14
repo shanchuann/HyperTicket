@@ -117,6 +117,14 @@ namespace hyperticket
         userActivityByAction_[action]++;
     }
 
+    void MetricsManager::recordOrderQueueDuration(double seconds)
+    {
+        static const double bounds[] = {0.01, 0.05, 0.1, 0.5, 1.0, 5.0};
+        std::lock_guard<std::mutex> lock(mutex_);
+        for (size_t i=0;i<6;++i) if(seconds<=bounds[i]) orderQueueDurationBuckets_[i]++;
+        orderQueueDurationCount_++; orderQueueDurationSum_+=seconds;
+    }
+
     double MetricsManager::calculateQuantile(const std::vector<double> &sorted, double quantile)
     {
         if (sorted.empty())
@@ -199,7 +207,7 @@ namespace hyperticket
 
         // Histogram 指标：请求延迟
         oss << "\n# HELP hyperticket_request_duration_seconds Request duration in seconds\n";
-        oss << "# TYPE hyperticket_request_duration_seconds histogram\n";
+        oss << "# TYPE hyperticket_request_duration_seconds summary\n";
         {
             std::lock_guard<std::mutex> lock(mutex_);
             for (const auto &pair : requestDurationByMethod_)
@@ -253,6 +261,30 @@ namespace hyperticket
         oss << "\n# HELP hyperticket_db_connection_errors_total Total number of database connection errors\n";
         oss << "# TYPE hyperticket_db_connection_errors_total counter\n";
         oss << "hyperticket_db_connection_errors_total " << dbConnectionErrors_.load() << "\n";
+
+        oss << "\n# TYPE hyperticket_order_queue_published_total counter\n";
+        oss << "hyperticket_order_queue_published_total " << orderQueuePublished_.load() << "\n";
+        oss << "# TYPE hyperticket_order_queue_consumed_total counter\n";
+        oss << "hyperticket_order_queue_consumed_total " << orderQueueConsumed_.load() << "\n";
+        oss << "# TYPE hyperticket_order_queue_failed_total counter\n";
+        oss << "hyperticket_order_queue_failed_total " << orderQueueFailed_.load() << "\n";
+        oss << "# TYPE hyperticket_order_queue_pending gauge\n";
+        oss << "hyperticket_order_queue_pending " << orderQueuePending_.load() << "\n";
+        oss << "# TYPE hyperticket_inventory_sold_out_total counter\n";
+        oss << "hyperticket_inventory_sold_out_total " << inventorySoldOut_.load() << "\n";
+        oss << "# TYPE hyperticket_inventory_compensation_total counter\n";
+        oss << "hyperticket_inventory_compensation_total " << inventoryCompensations_.load() << "\n";
+        oss << "# HELP hyperticket_order_queue_consume_duration_seconds Queue to database latency\n";
+        oss << "# TYPE hyperticket_order_queue_consume_duration_seconds histogram\n";
+        {
+            static const char *labels[] = {"0.01","0.05","0.1","0.5","1","5"};
+            std::lock_guard<std::mutex> lock(mutex_);
+            for(size_t i=0;i<6;++i)
+                oss << "hyperticket_order_queue_consume_duration_seconds_bucket{le=\"" << labels[i] << "\"} " << orderQueueDurationBuckets_[i] << "\n";
+            oss << "hyperticket_order_queue_consume_duration_seconds_bucket{le=\"+Inf\"} " << orderQueueDurationCount_ << "\n";
+            oss << "hyperticket_order_queue_consume_duration_seconds_sum " << orderQueueDurationSum_ << "\n";
+            oss << "hyperticket_order_queue_consume_duration_seconds_count " << orderQueueDurationCount_ << "\n";
+        }
 
         oss << "\n# HELP hyperticket_errors_total Total number of errors by type\n";
         oss << "# TYPE hyperticket_errors_total counter\n";

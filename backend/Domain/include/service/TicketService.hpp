@@ -8,6 +8,7 @@
 #include "../../../SqlConnPool/include/ConnectionPool.hpp"
 #include "../ISessionManager.hpp"
 #include "../IStockCache.hpp"
+#include "../IOrderQueue.hpp"
 #include "../repository/UserRepository.hpp"
 #include "../repository/TicketRepository.hpp"
 #include "../repository/ReservationRepository.hpp"
@@ -35,6 +36,9 @@ namespace hyperticket
         bool expirePendingOrders();
         // 定时结算到期的 PROCESSING 支付流水（模拟网关异步回调）。
         bool settleDuePayments();
+        void configureOrderQueue(IOrderQueue *queue, int maxRetries)
+        { orderQueue_ = queue; orderQueueMaxRetries_ = maxRetries; }
+        int processQueuedOrders(int maxMessages);
         // 模拟网关参数（config.json payment 段）：结算延迟与成功率。
         void configurePayment(int settleDelayMs, int successRatePercent)
         {
@@ -59,6 +63,7 @@ namespace hyperticket
         Json::Value favorite(const Json::Value &req);
         Json::Value viewFavorites(const Json::Value &req);
         Json::Value hotTickets(const Json::Value &req);
+        Json::Value queryQueuedOrder(const Json::Value &req);
 
         // 管理员 handlers
         Json::Value adminLogin(const Json::Value &req);
@@ -78,6 +83,8 @@ namespace hyperticket
         ISessionManager *sessions_;
         NoopStockCache noopStock_; // stock 未注入时的兜底实现
         IStockCache *stock_;
+        IOrderQueue *orderQueue_ = nullptr;
+        int orderQueueMaxRetries_ = 5;
         UserRepository userRepo_;
         TicketRepository ticketRepo_;
         ReservationRepository resvRepo_;

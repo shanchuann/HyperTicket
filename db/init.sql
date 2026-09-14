@@ -76,9 +76,11 @@ CREATE TABLE IF NOT EXISTS reservations (
   status ENUM('PENDING','CONFIRMED','CANCELLED','EXPIRED') NOT NULL DEFAULT 'CONFIRMED',
   expire_at DATETIME DEFAULT NULL, -- PENDING 订单支付截止时间，超时定时任务回收
   order_no VARCHAR(32) DEFAULT NULL, -- 真实订单号 HT{YYYYMMDD}{ID:06d}，下单提交后生成
+  request_id VARCHAR(64) DEFAULT NULL, -- 异步下单幂等 ID
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_resv_order_no (order_no),
+  UNIQUE KEY uq_resv_request_id (request_id),
   CONSTRAINT fk_reservations_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT ON UPDATE CASCADE,
   CONSTRAINT fk_reservations_ticket FOREIGN KEY (ticket_id) REFERENCES tickets(id) ON DELETE RESTRICT ON UPDATE CASCADE,
   INDEX idx_reservations_user (user_id),

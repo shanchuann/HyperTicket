@@ -40,5 +40,15 @@
     "settle_delay_ms": 1000,
     "settle_interval_ms": 500,
     "success_rate_percent": 100
+  },
+  "order_queue": {
+    "enabled": true,
+    "stream": "hyperticket:orders",
+    "consumer_group": "order-workers",
+    "consumer_name": "worker-1",
+    "poll_interval_ms": 20,
+    "batch_size": 32,
+    "max_retries": 5,
+    "claim_idle_ms": 30000
   }
 }

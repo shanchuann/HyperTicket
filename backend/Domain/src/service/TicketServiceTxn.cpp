@@ -5,9 +5,22 @@
 #include "../../include/ServiceUtil.hpp"
 #include "../../include/service/Txn.hpp"
 #include "../../../ChronoLite/include/Logger.hpp"
+#include <random>
+#include <sstream>
 
 namespace hyperticket
 {
+    namespace
+    {
+        std::string newRequestId()
+        {
+            static const char hex[] = "0123456789abcdef";
+            thread_local std::mt19937_64 rng{std::random_device{}()};
+            std::string id = "ord_";
+            for (int i = 0; i < 24; ++i) id.push_back(hex[rng() & 0xf]);
+            return id;
+        }
+    }
 
     Json::Value TicketService::orderTicket(const Json::Value &req)
     {
@@ -27,85 +40,164 @@ namespace hyperticket
         int64_t seatId = getIntField(req, "seat_id", 0);
         if (seatId > 0) qty = 1;
 
-        // ── Redis 预扣减：把"无票"请求挡在 MySQL 之前 ──
-        // SoldOut 直接秒拒（不占 DB 连接、不产生行锁竞争）；
-        // Ok 表示缓存扣减成功，继续走 DB 事务（MySQL 仍是真值，防超卖靠行锁）；
-        // Unavailable（未命中/Redis 故障）降级直查 DB，之后用真值回填。
-        auto decr = stock_->tryDecr(tkId, qty);
-        if (decr == IStockCache::DecrResult::SoldOut)
-            return makeError(err::kNoTicket);
+        if (!orderQueue_) return makeError("ORDER_QUEUE_UNAVAILABLE");
 
-        MYSQL *conn = nullptr;
-        shanchuan::ConnectionGuard raii(&conn, pool_);
-        if (!conn)
+        std::string requestId = req.get("request_id", "").asString();
+        if (requestId.empty()) requestId = newRequestId();
+        if (requestId.size() < 8 || requestId.size() > 64 ||
+            requestId.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-") != std::string::npos)
+            return makeError(err::kInvalidInput);
+
+        Json::Value payload;
+        payload["request_id"] = requestId;
+        payload["user_id"] = static_cast<Json::Int64>(userId);
+        payload["usertel"] = tel;
+        payload["ticket_id"] = static_cast<Json::Int64>(tkId);
+        payload["quantity"] = qty;
+        payload["seat_id"] = static_cast<Json::Int64>(seatId);
+        payload["created_ms"] = static_cast<Json::Int64>(nowMs());
+        Json::StreamWriterBuilder wb; wb["indentation"] = "";
+        std::string streamId;
+        auto queued = orderQueue_->enqueue(tkId, qty, userId, requestId,
+                                            Json::writeString(wb, payload), streamId);
+        if (queued == IOrderQueue::EnqueueResult::Unavailable)
         {
-            if (decr == IStockCache::DecrResult::Ok) stock_->incr(tkId, qty); // 补偿
-            return makeError(err::kDbUnavailable);
+            // Cold cache: initialize once from the DB. SET NX prevents two
+            // concurrent cold requests from overwriting a deduction.
+            MYSQL *conn=nullptr; shanchuan::ConnectionGuard guard(&conn,pool_);
+            Ticket current;
+            if (conn && ticketRepo_.findDetail(conn,tkId,current) &&
+                orderQueue_->initializeStock(tkId,current.availableSeats))
+                queued=orderQueue_->enqueue(tkId,qty,userId,requestId,
+                                             Json::writeString(wb,payload),streamId);
         }
+        if (queued == IOrderQueue::EnqueueResult::SoldOut) return makeError(err::kNoTicket);
+        if (queued == IOrderQueue::EnqueueResult::Unavailable) return makeError("ORDER_QUEUE_UNAVAILABLE");
 
-        // DB 事务失败时回补缓存的补偿动作（下单未成功且预扣过，则还回去）
-        bool committed = false;
-        auto compensate = [&]() {
-            if (decr == IStockCache::DecrResult::Ok && !committed)
-                stock_->incr(tkId, qty);
-        };
+        Json::Value res = makeOk();
+        res["request_id"] = requestId;
+        res["order_status"] = queued == IOrderQueue::EnqueueResult::Duplicate ? "DUPLICATE" : "QUEUED";
+        return res;
+    }
 
-        Txn txn(conn);
-        if (!txn.ok()) { compensate(); return makeError(err::kDbBegin); }
-
-        Ticket t;
-        if (!ticketRepo_.lockForUpdate(conn, tkId, t)) { txn.rollback(); compensate(); return makeError(err::kTicketNotFound); }
-        if (t.status != 1)
+    Json::Value TicketService::queryQueuedOrder(const Json::Value &req)
+    {
+        std::string tel; int64_t userId=0;
+        if (!sessions_->resolve(req.get(field::kToken, "").asString(), nowMs(), tel, userId))
+            return makeError(err::kUnauthorized);
+        const std::string requestId=req.get("request_id","").asString();
+        if (requestId.empty()) return makeError(err::kInvalidInput);
+        IOrderQueue::Status s;
+        if (orderQueue_ && orderQueue_->getStatus(requestId,s))
         {
-            txn.rollback();
-            stock_->set(tkId, 0); // 下架票：校正缓存，后续请求秒拒
-            committed = true;     // 已用真值覆盖，无需 incr 补偿
-            return makeError(err::kTicketOffline);
+            if (s.userId != userId) return makeError(err::kOrderNotFound);
+            Json::Value res=makeOk(); res["request_id"]=requestId;
+            res["order_status"]=s.state;
+            if(!s.reservationId.empty()) res["reservation_id"]=s.reservationId;
+            if(!s.reason.empty()) res["reason"]=s.reason;
+            return res;
         }
-        if (t.availableSeats < qty)
+        MYSQL *conn=nullptr; shanchuan::ConnectionGuard raii(&conn,pool_);
+        Reservation existing;
+        if (conn && resvRepo_.findByRequestId(conn,requestId,userId,existing))
         {
-            txn.rollback();
-            stock_->set(tkId, t.availableSeats); // 用 DB 真值校正缓存
-            committed = true;
-            return makeError(err::kNoTicket);
+            Json::Value res=makeOk(); res["request_id"]=requestId;
+            res["order_status"]=existing.status; res["reservation_id"]=std::to_string(existing.id);
+            return res;
         }
+        return makeError(err::kOrderNotFound);
+    }
 
-        if (!ticketRepo_.adjustSeats(conn, tkId, -qty)) { txn.rollback(); compensate(); return makeError(err::kDbUpdate); }
-        if (!resvRepo_.insert(conn, userId, tkId, qty)) { txn.rollback(); compensate(); return makeError(err::kDbInsert); }
-
-        // 必须在审计 INSERT 之前读取，否则 mysql_insert_id 返回的是审计行的 ID
-        int64_t resvId = static_cast<int64_t>(mysql_insert_id(conn));
-
-        resvRepo_.insertAuditLastInsert(conn, "CREATE", "user:" + tel);
-
-        if (seatId > 0)
+    int TicketService::processQueuedOrders(int maxMessages)
+    {
+        if (!orderQueue_) return 0;
+        int processed=0;
+        while (processed < maxMessages)
         {
-            if (!seatRepo_.lockAndSell(conn, seatId, tkId, resvId))
+            IOrderQueue::Message msg;
+            if (!orderQueue_->consume(msg)) break;
+            Json::Value p; Json::CharReaderBuilder rb; std::string errors;
+            std::istringstream input(msg.payload);
+            if (!Json::parseFromStream(rb,input,&p,&errors))
+            {
+                orderQueue_->terminalFailure(msg,0,0,0,"INVALID_MESSAGE");
+                ++processed; continue;
+            }
+            const int64_t userId=getIntField(p,"user_id",0);
+            const int64_t ticketId=getIntField(p,"ticket_id",0);
+            const int qty=static_cast<int>(getIntField(p,"quantity",0));
+            const int64_t seatId=getIntField(p,"seat_id",0);
+            const int64_t createdMs=getIntField(p,"created_ms",nowMs());
+            const std::string tel=p.get("usertel","").asString();
+            if(userId<=0||ticketId<=0||qty<1||qty>6)
+            {
+                orderQueue_->terminalFailure(msg,ticketId,qty,userId,"INVALID_MESSAGE");
+                ++processed; continue;
+            }
+            MYSQL *conn=nullptr; shanchuan::ConnectionGuard guard(&conn,pool_);
+            if(!conn)
+            {
+                if(orderQueue_->deliveryCount(msg.id)>=orderQueueMaxRetries_)
+                    orderQueue_->terminalFailure(msg,ticketId,qty,userId,err::kDbUnavailable);
+                break;
+            }
+
+            Reservation existing;
+            if(resvRepo_.findByRequestId(conn,msg.requestId,userId,existing))
+            {
+                orderQueue_->setStatus(msg.requestId,existing.status,userId,std::to_string(existing.id));
+                orderQueue_->acknowledge(msg.id); ++processed; continue;
+            }
+
+            Txn txn(conn);
+            if(!txn.ok()) break;
+            Ticket t; std::string failure;
+            if(!ticketRepo_.lockForUpdate(conn,ticketId,t)) failure=err::kTicketNotFound;
+            else if(t.status!=1) failure=err::kTicketOffline;
+            else if(t.availableSeats<qty) failure=err::kNoTicket;
+            else if(!ticketRepo_.adjustSeats(conn,ticketId,-qty)) failure=err::kDbUpdate;
+            else if(!resvRepo_.insert(conn,userId,ticketId,qty,msg.requestId)) failure=err::kDbInsert;
+
+            int64_t resvId=0;
+            if(failure.empty())
+            {
+                resvId=static_cast<int64_t>(mysql_insert_id(conn));
+                if(seatId>0 && !seatRepo_.lockAndSell(conn,seatId,ticketId,resvId)) failure="SEAT_TAKEN";
+                else resvRepo_.insertAuditLastInsert(conn,"CREATE","queue:"+msg.requestId+" user:"+tel);
+            }
+            if(!failure.empty() || !txn.commit())
             {
                 txn.rollback();
-                compensate();
-                return makeError("SEAT_TAKEN");
+                // An insert race may mean another consumer already committed it.
+                if(resvRepo_.findByRequestId(conn,msg.requestId,userId,existing))
+                {
+                    orderQueue_->setStatus(msg.requestId,existing.status,userId,std::to_string(existing.id));
+                    orderQueue_->acknowledge(msg.id); ++processed; continue;
+                }
+                // Logical failures are terminal. Infrastructure errors stay pending.
+                if(failure==err::kTicketNotFound || failure==err::kTicketOffline ||
+                   failure==err::kNoTicket || failure=="SEAT_TAKEN")
+                {
+                    orderQueue_->terminalFailure(msg,ticketId,qty,userId,failure);
+                    if(failure==err::kTicketNotFound || failure==err::kTicketOffline || failure==err::kNoTicket)
+                        stock_->set(ticketId,0); // stale-high cache: fail closed
+                    ++processed; continue;
+                }
+                if(orderQueue_->deliveryCount(msg.id)>=orderQueueMaxRetries_)
+                {
+                    orderQueue_->terminalFailure(msg,ticketId,qty,userId,
+                        failure.empty()?err::kDbUpdate:failure);
+                    ++processed; continue;
+                }
+                break;
             }
+            resvRepo_.setOrderNo(conn,resvId);
+            stock_->invalidateTicketList();
+            orderQueue_->setStatus(msg.requestId,"PENDING",userId,std::to_string(resvId));
+            orderQueue_->recordConsumeDuration((nowMs()-createdMs)/1000.0);
+            orderQueue_->acknowledge(msg.id); ++processed;
         }
-
-        if (!txn.commit()) { txn.rollback(); compensate(); return makeError(err::kDbUpdate); }
-        committed = true;
-
-        // 缓存未命中时用 DB 真值回填（本次事务已扣 qty，真值 = availableSeats - qty）
-        if (decr == IStockCache::DecrResult::Unavailable)
-            stock_->set(tkId, t.availableSeats - qty);
-        stock_->invalidateTicketList(); // 余票数变化，列表缓存失效
-
-        // 事务提交后生成订单号（非事务操作，失败不影响下单结果）
-        resvRepo_.setOrderNo(conn, resvId);
-
-        // v2：订单为 PENDING 待支付，返回订单信息供前端跳转支付
-        Json::Value res = makeOk();
-        res["reservation_id"] = std::to_string(resvId);
-        res["order_status"] = "PENDING";
-        res["pay_deadline_minutes"] = 15;
-        res["total_price"] = t.price * qty;
-        return res;
+        return processed;
     }
 
     // PAY_ORDER/PAY_QUERY/定时结算见 TicketServicePay.cpp（v3 支付模块）。

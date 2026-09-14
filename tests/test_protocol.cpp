@@ -35,6 +35,7 @@ static void test_enum_values()
     // v3 支付模块
     CHECK_EQ((int)PAY_ORDER, 20);
     CHECK_EQ((int)PAY_QUERY, 24);
+    CHECK_EQ((int)ORDER_QUERY, 25);
 }
 
 static void test_json_line_roundtrip()

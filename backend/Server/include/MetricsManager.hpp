@@ -7,10 +7,9 @@
 #include <map>
 #include <mutex>
 #include <vector>
+#include <array>
 
-// 注意：此文件为 Prometheus Metrics 监控的接口定义
-// 实际实现需要集成 prometheus-cpp 客户端库
-// 当前为占位实现，待 Phase 3 完整集成
+// Lightweight Prometheus text exposition without an external client library.
 
 namespace hyperticket
 {
@@ -60,6 +59,12 @@ namespace hyperticket
 
         // 记录用户活跃度：action 为用户操作（login/order/view等）
         void recordUserActivity(const std::string &action);
+        void recordOrderQueued() { orderQueuePublished_++; orderQueuePending_++; }
+        void recordOrderConsumed() { orderQueueConsumed_++; if(orderQueuePending_>0)orderQueuePending_--; }
+        void recordOrderQueueFailure() { orderQueueFailed_++; }
+        void recordInventorySoldOut() { inventorySoldOut_++; }
+        void recordInventoryCompensation() { inventoryCompensations_++; }
+        void recordOrderQueueDuration(double seconds);
 
         // ============================================================
         // 资源指标（Resource Metrics）
@@ -102,6 +107,15 @@ namespace hyperticket
         std::atomic<int> dbConnectionsActive_{0};
         std::atomic<int> dbConnectionsIdle_{0};
         std::atomic<int64_t> dbConnectionErrors_{0};
+        std::atomic<int64_t> orderQueuePublished_{0};
+        std::atomic<int64_t> orderQueueConsumed_{0};
+        std::atomic<int64_t> orderQueueFailed_{0};
+        std::atomic<int64_t> orderQueuePending_{0};
+        std::atomic<int64_t> inventorySoldOut_{0};
+        std::atomic<int64_t> inventoryCompensations_{0};
+        std::array<int64_t, 6> orderQueueDurationBuckets_{{0,0,0,0,0,0}};
+        int64_t orderQueueDurationCount_{0};
+        double orderQueueDurationSum_{0.0};
 
         std::mutex mutex_;
         std::map<std::string, int64_t> requestsByMethod_;

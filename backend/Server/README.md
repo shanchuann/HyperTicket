@@ -80,6 +80,11 @@ HyperTicket 服务端程序，基于自研 Inet Reactor 网络库实现高并发
 | 5 | ORDER | 下单预订 | 需要 |
 | 6 | VIEW_MY | 查看本人订单 | 需要 |
 | 7 | CANCEL | 取消预订 | 需要 |
+| 25 | ORDER_QUERY | 查询异步下单状态 | 需要 |
+
+`ORDER` 成功接收时立即返回 `QUEUED` 与 `request_id`，客户端通过
+`ORDER_QUERY` 轮询至 `PENDING` 或 `FAILED`。详见
+[异步下单架构](../../docs/ASYNC_ORDER_ARCHITECTURE.md)。
 
 **请求字段**: type, usertel, password, username, token, index 等
 

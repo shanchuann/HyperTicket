@@ -16,16 +16,32 @@ namespace hyperticket
     {
     public:
         // 新建预定：v2 改为 PENDING（待支付），15 分钟内未支付由定时任务回收。
-        bool insert(MYSQL *conn, int64_t userId, int64_t ticketId, int quantity)
+        bool insert(MYSQL *conn, int64_t userId, int64_t ticketId, int quantity,
+                    const std::string &requestId = "")
         {
             MysqlStmt st(conn,
-                "INSERT INTO reservations (user_id, ticket_id, quantity, status, expire_at) "
-                "VALUES(?,?,?,'PENDING', DATE_ADD(NOW(), INTERVAL 15 MINUTE))");
+                "INSERT INTO reservations (user_id, ticket_id, quantity, status, expire_at, request_id) "
+                "VALUES(?,?,?,'PENDING', DATE_ADD(NOW(), INTERVAL 15 MINUTE), NULLIF(?,''))");
             if (!st.ok()) return false;
             st.bindInt(0, userId);
             st.bindInt(1, ticketId);
             st.bindInt(2, quantity);
+            st.bindString(3, requestId);
             return st.execute();
+        }
+
+        bool findByRequestId(MYSQL *conn, const std::string &requestId,
+                             int64_t userId, Reservation &out)
+        {
+            MysqlStmt st(conn,
+                "SELECT id, ticket_id, quantity, status, COALESCE(order_no,'') "
+                "FROM reservations WHERE request_id = ? AND user_id = ?");
+            if (!st.ok()) return false;
+            st.bindString(0, requestId); st.bindInt(1, userId);
+            if (!st.execute() || !st.bindResults(5) || !st.fetch()) return false;
+            out.id=st.getInt(0); out.ticketId=st.getInt(1);
+            out.quantity=static_cast<int>(st.getInt(2)); out.status=st.getString(3);
+            out.orderNo=st.getString(4); out.userId=userId; return true;
         }
 
         // 支付：PENDING → CONFIRMED（仅本人、未过期）。返回是否真的改到了行。

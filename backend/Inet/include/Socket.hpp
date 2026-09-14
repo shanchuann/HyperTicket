@@ -22,6 +22,8 @@ namespace shanchuan
         void shutdownWrite();
         void setTcpNoDelay(bool on);
         void setKeepAlive(bool on);
+        void setReuseAddr(bool on);
+        void setReusePort(bool on);
         bool getTcpInfo(struct tcp_info *) const;
         bool getTcpInfoString(char *buf,int len) const;
     };

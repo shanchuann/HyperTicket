@@ -1,6 +1,5 @@
 #include "../../include/service/TicketService.hpp"
 
-#include <random>
 #include "../../../Common/include/Protocol.hpp"
 #include "../../../Common/include/Errors.hpp"
 #include "../../include/ServiceUtil.hpp"
@@ -10,31 +9,33 @@ namespace hyperticket
 {
     // ========== Admin Token ==========
 
-    static std::string generateAdminToken()
+    std::string TicketService::createAdminToken(const std::string &username,
+                                                 bool mustChangePassword)
     {
-        static const char hex[] = "0123456789abcdef";
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::uniform_int_distribution<int> dist(0, 15);
-        std::string token(32, '0');
-        for (char &c : token) c = hex[dist(gen)];
-        return "adm_" + token;
+        return sessions_->createAdmin(username, mustChangePassword, nowMs());
     }
 
-    std::string TicketService::createAdminToken(const std::string &username)
+    bool TicketService::resolveAdminToken(const std::string &token, std::string &usernameOut,
+                                           bool &mustChangePasswordOut)
     {
-        std::string token = generateAdminToken();
-        std::lock_guard<std::mutex> lock(adminSessionsMtx_);
-        adminSessions_[token] = username;
-        return token;
+        return sessions_->resolveAdmin(token, nowMs(), usernameOut, mustChangePasswordOut);
     }
 
-    bool TicketService::resolveAdminToken(const std::string &token, std::string &usernameOut)
+    bool TicketService::authorizeAdmin(const Json::Value &req, std::string &usernameOut,
+                                        std::string &errorOut, bool allowPasswordChangeOnly)
     {
-        std::lock_guard<std::mutex> lock(adminSessionsMtx_);
-        auto it = adminSessions_.find(token);
-        if (it == adminSessions_.end()) return false;
-        usernameOut = it->second;
+        bool mustChangePassword = false;
+        if (!resolveAdminToken(req.get(field::kAdminToken, "").asString(),
+                               usernameOut, mustChangePassword))
+        {
+            errorOut = err::kAdminUnauthorized;
+            return false;
+        }
+        if (!allowPasswordChangeOnly && mustChangePassword)
+        {
+            errorOut = "ADMIN_PASSWORD_CHANGE_REQUIRED";
+            return false;
+        }
         return true;
     }
 
@@ -53,13 +54,41 @@ namespace hyperticket
         shanchuan::ConnectionGuard raii(&conn, pool_);
         if (!conn) return makeError(err::kDbUnavailable);
 
+        const std::string ip = req.get("_client_ip", "").asString();
+        const std::string device = req.get("client_id", "").asString().substr(0, 128);
+        int64_t retryAfter = 0;
+        if (!authRepo_.isBlocked(conn, "admin_account", username, retryAfter))
+            return makeError(err::kDbUnavailable);
+        if (retryAfter == 0 && !ip.empty() && !authRepo_.isBlocked(conn, "ip", ip, retryAfter))
+            return makeError(err::kDbUnavailable);
+        if (retryAfter == 0 && !device.empty() && !authRepo_.isBlocked(conn, "device", device, retryAfter))
+            return makeError(err::kDbUnavailable);
+        if (retryAfter > 0)
+        {
+            Json::Value locked = makeError("AUTH_TEMPORARILY_LOCKED");
+            locked["retry_after_seconds"] = static_cast<Json::Int64>(retryAfter);
+            return locked;
+        }
+
         Admin admin;
         if (!adminRepo_.findByUsername(conn, username, admin))
+        {
+            authRepo_.recordFailure(conn, "admin_account", username, authFailureWindowSeconds_, authMaxFailures_, authLockSeconds_);
+            if (!ip.empty()) authRepo_.recordFailure(conn, "ip", ip, authFailureWindowSeconds_, authMaxFailures_ * 4, authLockSeconds_);
+            if (!device.empty()) authRepo_.recordFailure(conn, "device", device, authFailureWindowSeconds_, authMaxFailures_ * 2, authLockSeconds_);
+            authRepo_.audit(conn, "admin", username, "LOGIN_FAILURE", ip, "invalid_credentials");
             return makeError(err::kAdminInvalidCredentials);
+        }
 
         bool needRehash = false;
         if (!verifyPassword(passwd, admin.passwordHash, needRehash))
+        {
+            authRepo_.recordFailure(conn, "admin_account", username, authFailureWindowSeconds_, authMaxFailures_, authLockSeconds_);
+            if (!ip.empty()) authRepo_.recordFailure(conn, "ip", ip, authFailureWindowSeconds_, authMaxFailures_ * 4, authLockSeconds_);
+            if (!device.empty()) authRepo_.recordFailure(conn, "device", device, authFailureWindowSeconds_, authMaxFailures_ * 2, authLockSeconds_);
+            authRepo_.audit(conn, "admin", username, "LOGIN_FAILURE", ip, "invalid_credentials");
             return makeError(err::kAdminInvalidCredentials);
+        }
 
         if (needRehash)
             adminRepo_.updatePasswordHash(conn, username, hashPassword(passwd));
@@ -68,8 +97,17 @@ namespace hyperticket
         bool dummy2 = false;
         bool isDefault = verifyPassword("password", admin.passwordHash, dummy2);
 
+        std::string token = createAdminToken(username, isDefault);
+        if (token.empty()) return makeError("SESSION_UNAVAILABLE");
+
+        adminRepo_.recordLoginSuccess(conn, username);
+        authRepo_.clear(conn, "admin_account", username);
+        if (!device.empty()) authRepo_.clear(conn, "device", device);
+        authRepo_.audit(conn, "admin", username, "LOGIN_SUCCESS", ip,
+                        isDefault ? "default_password" : "");
+
         Json::Value res = makeOk();
-        res[field::kAdminToken]      = createAdminToken(username);
+        res[field::kAdminToken]      = token;
         res[field::kUserName]        = admin.username;
         res["role"]                  = admin.role;
         res["is_default_password"]   = isDefault;
@@ -83,21 +121,12 @@ namespace hyperticket
     Json::Value TicketService::adminChangePassword(const Json::Value &req)
     {
         std::string who;
-        if (!resolveAdminToken(req.get(field::kAdminToken, "").asString(), who))
-            return makeError(err::kAdminUnauthorized);
+        std::string authError;
+        if (!authorizeAdmin(req, who, authError, true))
+            return makeError(authError);
 
         std::string newPwd = req.get("new_password", "").asString();
-        if (newPwd.size() < 6 || newPwd.size() > 16)
-            return makeError(err::kPasswordTooWeak);
-
-        bool hasDigit = false, hasLower = false, hasUpper = false;
-        for (unsigned char ch : newPwd)
-        {
-            if (ch >= '0' && ch <= '9') hasDigit = true;
-            else if (ch >= 'a' && ch <= 'z') hasLower = true;
-            else if (ch >= 'A' && ch <= 'Z') hasUpper = true;
-        }
-        if (!hasDigit || !hasLower || !hasUpper)
+        if (!isStrongPassword(newPwd))
             return makeError(err::kPasswordTooWeak);
 
         // 不允许与默认密码相同
@@ -109,9 +138,20 @@ namespace hyperticket
         shanchuan::ConnectionGuard raii(&conn, pool_);
         if (!conn) return makeError(err::kDbUnavailable);
 
-        if (!adminRepo_.updatePasswordHash(conn, who, hashPassword(newPwd)))
+        const std::string newHash = hashPassword(newPwd);
+        if (newHash.empty() || !adminRepo_.updatePasswordHash(conn, who, newHash))
             return makeError(err::kDbUpdate);
 
+        // 写入成功不等于持久化内容正确；回读并验证后才向客户端确认。
+        Admin updatedAdmin;
+        bool needRehash = false;
+        if (!adminRepo_.findByUsername(conn, who, updatedAdmin) ||
+            !verifyPassword(newPwd, updatedAdmin.passwordHash, needRehash))
+            return makeError(err::kDbUpdate);
+
+        sessions_->removeAllForAdmin(who);
+        authRepo_.audit(conn, "admin", who, "PASSWORD_CHANGED",
+                        req.get("_client_ip", "").asString(), "all_sessions_revoked");
         LOG_INFO << "admin[" << who << "] changed password";
         return makeOk();
     }
@@ -123,8 +163,9 @@ namespace hyperticket
     Json::Value TicketService::adminListTickets(const Json::Value &req)
     {
         std::string who;
-        if (!resolveAdminToken(req.get(field::kAdminToken, "").asString(), who))
-            return makeError(err::kAdminUnauthorized);
+        std::string authError;
+        if (!authorizeAdmin(req, who, authError))
+            return makeError(authError);
 
         MYSQL *conn = nullptr;
         shanchuan::ConnectionGuard raii(&conn, pool_);
@@ -161,8 +202,9 @@ namespace hyperticket
     Json::Value TicketService::adminAddTicket(const Json::Value &req)
     {
         std::string who;
-        if (!resolveAdminToken(req.get(field::kAdminToken, "").asString(), who))
-            return makeError(err::kAdminUnauthorized);
+        std::string authError;
+        if (!authorizeAdmin(req, who, authError))
+            return makeError(authError);
 
         std::string title     = req.get(field::kTitle, "").asString();
         std::string venue     = req.get(field::kVenue, "").asString();
@@ -207,8 +249,9 @@ namespace hyperticket
     Json::Value TicketService::adminDeleteTicket(const Json::Value &req)
     {
         std::string who;
-        if (!resolveAdminToken(req.get(field::kAdminToken, "").asString(), who))
-            return makeError(err::kAdminUnauthorized);
+        std::string authError;
+        if (!authorizeAdmin(req, who, authError))
+            return makeError(authError);
 
         if (!req.isMember(field::kTicketId))
             return makeError(err::kInvalidInput);
@@ -237,8 +280,9 @@ namespace hyperticket
     Json::Value TicketService::adminListUsers(const Json::Value &req)
     {
         std::string who;
-        if (!resolveAdminToken(req.get(field::kAdminToken, "").asString(), who))
-            return makeError(err::kAdminUnauthorized);
+        std::string authError;
+        if (!authorizeAdmin(req, who, authError))
+            return makeError(authError);
 
         MYSQL *conn = nullptr;
         shanchuan::ConnectionGuard raii(&conn, pool_);
@@ -266,8 +310,9 @@ namespace hyperticket
     Json::Value TicketService::adminStats(const Json::Value &req)
     {
         std::string who;
-        if (!resolveAdminToken(req.get(field::kAdminToken, "").asString(), who))
-            return makeError(err::kAdminUnauthorized);
+        std::string authError;
+        if (!authorizeAdmin(req, who, authError))
+            return makeError(authError);
 
         MYSQL *conn = nullptr;
         shanchuan::ConnectionGuard raii(&conn, pool_);
@@ -308,8 +353,9 @@ namespace hyperticket
     Json::Value TicketService::adminBlacklist(const Json::Value &req)
     {
         std::string who;
-        if (!resolveAdminToken(req.get(field::kAdminToken, "").asString(), who))
-            return makeError(err::kAdminUnauthorized);
+        std::string authError;
+        if (!authorizeAdmin(req, who, authError))
+            return makeError(authError);
 
         std::string tel    = req.get(field::kTel, "").asString();
         std::string action = req.get(field::kAction, "").asString();

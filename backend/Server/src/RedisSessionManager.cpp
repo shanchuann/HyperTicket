@@ -115,6 +115,18 @@ namespace hyperticket
             }
 
             freeReplyObject(reply);
+            std::string userSetKey = "sessions:user:" + std::to_string(userId);
+            reply = (redisReply *)redisCommand(ctx, "SADD %s %s", userSetKey.c_str(), token.c_str());
+            if (!reply || reply->type == REDIS_REPLY_ERROR)
+            {
+                if (reply) freeReplyObject(reply);
+                redisReply *cleanup = (redisReply *)redisCommand(ctx, "DEL %s", key.c_str());
+                if (cleanup) freeReplyObject(cleanup);
+                return "";
+            }
+            freeReplyObject(reply);
+            reply = (redisReply *)redisCommand(ctx, "EXPIRE %s %d", userSetKey.c_str(), ttlSeconds);
+            if (reply) freeReplyObject(reply);
             LOG_DEBUG << "Session created in Redis: " << token.substr(0, 8) << "... for user " << userId;
         }
         catch (const std::exception &e)
@@ -185,7 +197,20 @@ namespace hyperticket
         // 如果能读取到，说明还没过期
         telOut = value["tel"].asString();
         userIdOut = value["userId"].asInt64();
-        // 续期已由 GETEX 完成，无需额外操作
+        // 续期反向索引，供修改密码后撤销该用户的所有会话。
+        try
+        {
+            redisContext *ctx = nullptr;
+            RedisConnGuard guard(&ctx, pool_.get());
+            std::string userSetKey = "sessions:user:" + std::to_string(userIdOut);
+            int ttlSeconds = static_cast<int>(ttlMs_ / 1000);
+            redisReply *reply = (redisReply *)redisCommand(ctx, "EXPIRE %s %d", userSetKey.c_str(), ttlSeconds);
+            if (reply) freeReplyObject(reply);
+        }
+        catch (const std::exception &e)
+        {
+            LOG_WARN << "Redis session index refresh failed: " << e.what();
+        }
         return true;
 #else
         // 占位实现：从文件读取
@@ -255,11 +280,30 @@ namespace hyperticket
             RedisConnGuard guard(&ctx, pool_.get());
 
             std::string key = "session:" + token;
+            int64_t userId = 0;
+            redisReply *current = (redisReply *)redisCommand(ctx, "GET %s", key.c_str());
+            if (current && current->type == REDIS_REPLY_STRING)
+            {
+                Json::CharReaderBuilder builder;
+                Json::Value value;
+                std::istringstream iss(std::string(current->str, current->len));
+                std::string errors;
+                if (Json::parseFromStream(builder, iss, &value, &errors))
+                    userId = value.get("userId", 0).asInt64();
+            }
+            if (current) freeReplyObject(current);
+
             redisReply *reply = (redisReply *)redisCommand(ctx, "DEL %s", key.c_str());
 
             if (reply)
             {
                 freeReplyObject(reply);
+            }
+            if (userId > 0)
+            {
+                std::string userSetKey = "sessions:user:" + std::to_string(userId);
+                reply = (redisReply *)redisCommand(ctx, "SREM %s %s", userSetKey.c_str(), token.c_str());
+                if (reply) freeReplyObject(reply);
             }
 
             LOG_DEBUG << "Session removed from Redis: " << token.substr(0, 8) << "...";
@@ -273,6 +317,198 @@ namespace hyperticket
         std::string filename = "/tmp/hyperticket_session_" + token;
         std::remove(filename.c_str());
         LOG_DEBUG << "Session removed (file): " << token.substr(0, 8) << "...";
+#endif
+    }
+
+    void RedisSessionManager::removeAllForUser(int64_t userId)
+    {
+#ifdef USE_HIREDIS
+        try
+        {
+            redisContext *ctx = nullptr;
+            RedisConnGuard guard(&ctx, pool_.get());
+            std::string setKey = "sessions:user:" + std::to_string(userId);
+            redisReply *members = (redisReply *)redisCommand(ctx, "SMEMBERS %s", setKey.c_str());
+            if (members && members->type == REDIS_REPLY_ARRAY)
+            {
+                for (size_t i = 0; i < members->elements; ++i)
+                {
+                    std::string tokenValue(members->element[i]->str, members->element[i]->len);
+                    std::string key = "session:" + tokenValue;
+                    redisReply *reply = (redisReply *)redisCommand(ctx, "DEL %s", key.c_str());
+                    if (reply) freeReplyObject(reply);
+                }
+            }
+            if (members) freeReplyObject(members);
+            redisReply *reply = (redisReply *)redisCommand(ctx, "DEL %s", setKey.c_str());
+            if (reply) freeReplyObject(reply);
+        }
+        catch (const std::exception &e)
+        {
+            LOG_ERROR << "Redis remove all user sessions failed: " << e.what();
+        }
+#else
+        (void)userId;
+#endif
+    }
+
+    std::string RedisSessionManager::createAdmin(const std::string &username,
+                                                  bool mustChangePassword,
+                                                  int64_t nowMs)
+    {
+        std::string token = "adm_" + generateToken();
+        Json::Value value;
+        value["username"] = username;
+        value["mustChangePassword"] = mustChangePassword;
+        value["expireMs"] = static_cast<Json::Int64>(nowMs + ttlMs_);
+        Json::StreamWriterBuilder builder;
+        builder["indentation"] = "";
+        std::string payload = Json::writeString(builder, value);
+#ifdef USE_HIREDIS
+        try
+        {
+            redisContext *ctx = nullptr;
+            RedisConnGuard guard(&ctx, pool_.get());
+            std::string key = "admin_session:" + token;
+            std::string setKey = "admin_sessions:" + username;
+            int ttlSeconds = static_cast<int>(ttlMs_ / 1000);
+            redisReply *reply = (redisReply *)redisCommand(ctx, "SETEX %s %d %s", key.c_str(), ttlSeconds, payload.c_str());
+            if (!reply || reply->type == REDIS_REPLY_ERROR)
+            {
+                if (reply) freeReplyObject(reply);
+                return "";
+            }
+            freeReplyObject(reply);
+            reply = (redisReply *)redisCommand(ctx, "SADD %s %s", setKey.c_str(), token.c_str());
+            if (reply) freeReplyObject(reply);
+            reply = (redisReply *)redisCommand(ctx, "EXPIRE %s %d", setKey.c_str(), ttlSeconds);
+            if (reply) freeReplyObject(reply);
+            return token;
+        }
+        catch (const std::exception &e)
+        {
+            LOG_ERROR << "Redis admin session create failed: " << e.what();
+            return "";
+        }
+#else
+        std::ofstream ofs("/tmp/hyperticket_admin_session_" + token);
+        if (!ofs.is_open()) return "";
+        ofs << payload;
+        return token;
+#endif
+    }
+
+    bool RedisSessionManager::resolveAdmin(const std::string &token, int64_t nowMs,
+                                            std::string &usernameOut,
+                                            bool &mustChangePasswordOut)
+    {
+        std::string payload;
+#ifdef USE_HIREDIS
+        try
+        {
+            redisContext *ctx = nullptr;
+            RedisConnGuard guard(&ctx, pool_.get());
+            std::string key = "admin_session:" + token;
+            int ttlSeconds = static_cast<int>(ttlMs_ / 1000);
+            redisReply *reply = (redisReply *)redisCommand(ctx, "GETEX %s EX %d", key.c_str(), ttlSeconds);
+            if (!reply || reply->type != REDIS_REPLY_STRING)
+            {
+                if (reply) freeReplyObject(reply);
+                return false;
+            }
+            payload.assign(reply->str, reply->len);
+            freeReplyObject(reply);
+        }
+        catch (const std::exception &e)
+        {
+            LOG_ERROR << "Redis admin session resolve failed: " << e.what();
+            return false;
+        }
+#else
+        std::ifstream ifs("/tmp/hyperticket_admin_session_" + token);
+        if (!ifs.is_open()) return false;
+        std::ostringstream oss;
+        oss << ifs.rdbuf();
+        payload = oss.str();
+#endif
+        Json::CharReaderBuilder builder;
+        Json::Value value;
+        std::istringstream iss(payload);
+        std::string errors;
+        if (!Json::parseFromStream(builder, iss, &value, &errors)) return false;
+#ifndef USE_HIREDIS
+        if (value.get("expireMs", 0).asInt64() <= nowMs)
+        {
+            removeAdmin(token);
+            return false;
+        }
+#endif
+        usernameOut = value.get("username", "").asString();
+        mustChangePasswordOut = value.get("mustChangePassword", false).asBool();
+#ifdef USE_HIREDIS
+        if (!usernameOut.empty())
+        {
+            try
+            {
+                redisContext *ctx = nullptr;
+                RedisConnGuard guard(&ctx, pool_.get());
+                std::string setKey = "admin_sessions:" + usernameOut;
+                int ttlSeconds = static_cast<int>(ttlMs_ / 1000);
+                redisReply *reply = (redisReply *)redisCommand(ctx, "EXPIRE %s %d", setKey.c_str(), ttlSeconds);
+                if (reply) freeReplyObject(reply);
+            }
+            catch (const std::exception &e)
+            {
+                LOG_WARN << "Redis admin session index refresh failed: " << e.what();
+            }
+        }
+#endif
+        return !usernameOut.empty();
+    }
+
+    void RedisSessionManager::removeAdmin(const std::string &token)
+    {
+#ifdef USE_HIREDIS
+        try
+        {
+            redisContext *ctx = nullptr;
+            RedisConnGuard guard(&ctx, pool_.get());
+            std::string key = "admin_session:" + token;
+            redisReply *reply = (redisReply *)redisCommand(ctx, "DEL %s", key.c_str());
+            if (reply) freeReplyObject(reply);
+        }
+        catch (const std::exception &e) { LOG_ERROR << "Redis admin session remove failed: " << e.what(); }
+#else
+        std::remove(("/tmp/hyperticket_admin_session_" + token).c_str());
+#endif
+    }
+
+    void RedisSessionManager::removeAllForAdmin(const std::string &username)
+    {
+#ifdef USE_HIREDIS
+        try
+        {
+            redisContext *ctx = nullptr;
+            RedisConnGuard guard(&ctx, pool_.get());
+            std::string setKey = "admin_sessions:" + username;
+            redisReply *members = (redisReply *)redisCommand(ctx, "SMEMBERS %s", setKey.c_str());
+            if (members && members->type == REDIS_REPLY_ARRAY)
+            {
+                for (size_t i = 0; i < members->elements; ++i)
+                {
+                    std::string tokenValue(members->element[i]->str, members->element[i]->len);
+                    std::string key = "admin_session:" + tokenValue;
+                    redisReply *reply = (redisReply *)redisCommand(ctx, "DEL %s", key.c_str());
+                    if (reply) freeReplyObject(reply);
+                }
+            }
+            if (members) freeReplyObject(members);
+            redisReply *reply = (redisReply *)redisCommand(ctx, "DEL %s", setKey.c_str());
+            if (reply) freeReplyObject(reply);
+        }
+        catch (const std::exception &e) { LOG_ERROR << "Redis remove all admin sessions failed: " << e.what(); }
+#else
+        (void)username;
 #endif
     }
 

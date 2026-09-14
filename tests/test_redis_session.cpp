@@ -164,9 +164,31 @@ void testConcurrency()
     std::cout << "PASSED" << std::endl;
 }
 
+void testRemoveAllAndAdminSession()
+{
+    std::cout << "Test 7: User-wide removal and admin session... ";
+    RedisSessionManager mgr("127.0.0.1", 6379, 30 * 60 * 1000, 2);
+    std::string one = mgr.create("13800138999", 2999, nowMs());
+    std::string two = mgr.create("13800138999", 2999, nowMs());
+    mgr.removeAllForUser(2999);
+    std::string tel;
+    int64_t userId = 0;
+    assert(!mgr.resolve(one, nowMs(), tel, userId));
+    assert(!mgr.resolve(two, nowMs(), tel, userId));
+
+    std::string token = mgr.createAdmin("admin-test", true, nowMs());
+    std::string username;
+    bool mustChange = false;
+    assert(mgr.resolveAdmin(token, nowMs(), username, mustChange));
+    assert(username == "admin-test" && mustChange);
+    mgr.removeAllForAdmin("admin-test");
+    assert(!mgr.resolveAdmin(token, nowMs(), username, mustChange));
+    std::cout << "PASSED" << std::endl;
+}
+
 void testPing()
 {
-    std::cout << "Test 7: Health check (ping)... ";
+    std::cout << "Test 8: Health check (ping)... ";
 
     RedisSessionManager mgr("127.0.0.1", 6379, 30 * 60 * 1000, 2);
     bool ok = mgr.ping();
@@ -190,6 +212,7 @@ int main()
         testRenewal();
         testRemove();
         testConcurrency();
+        testRemoveAllAndAdminSession();
         testPing();
 
         std::cout << std::endl;

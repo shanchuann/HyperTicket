@@ -61,6 +61,32 @@ namespace hyperticket
         int success_rate_percent = 100;  // 结算成功率（0-100），<100 用于演练失败路径
     };
 
+    struct AuthConfig
+    {
+        int max_failures = 5;
+        int failure_window_seconds = 900;
+        int lock_seconds = 900;
+    };
+
+    struct VerificationConfig
+    {
+        bool email_enabled = false;
+        std::string smtp_host;
+        int smtp_port = 465;
+        std::string smtp_username;
+        std::string smtp_auth_code;
+        std::string smtp_from;
+        std::string smtp_from_name = "HyperTicket";
+        bool smtp_use_tls = true;
+        bool mock_sms_enabled = false;
+        bool expose_mock_sms_code = false;
+        int code_ttl_seconds = 300;
+        int max_attempts = 5;
+        int resend_cooldown_seconds = 60;
+        int grant_ttl_seconds = 600;
+        bool require_registration_verification = true;
+    };
+
     struct OrderQueueConfig
     {
         bool enabled = true;
@@ -82,6 +108,8 @@ namespace hyperticket
         RedisConfig redis;
         MetricsConfig metrics;
         PaymentConfig payment;
+        AuthConfig auth;
+        VerificationConfig verification;
         OrderQueueConfig order_queue;
 
         static AppConfig Load(const std::string &path, std::string *error);

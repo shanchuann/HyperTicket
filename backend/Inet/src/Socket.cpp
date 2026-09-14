@@ -43,6 +43,20 @@ namespace shanchuan
         ::setsockopt(sockfd_,SOL_SOCKET,SO_KEEPALIVE, &optval,static_cast<socklen_t>(sizeof(optval)));
 
     }
+    void Socket::setReuseAddr(bool on) {
+        int optval = on ? 1 : 0;
+        ::setsockopt(sockfd_, SOL_SOCKET, SO_REUSEADDR, &optval,
+                     static_cast<socklen_t>(sizeof(optval)));
+    }
+    void Socket::setReusePort(bool on) {
+#ifdef SO_REUSEPORT
+        int optval = on ? 1 : 0;
+        ::setsockopt(sockfd_, SOL_SOCKET, SO_REUSEPORT, &optval,
+                     static_cast<socklen_t>(sizeof(optval)));
+#else
+        (void)on;
+#endif
+    }
     bool Socket::getTcpInfo(struct tcp_info *tcpi) const {
         socklen_t len = sizeof(*tcpi);
         memset(tcpi,0,len);

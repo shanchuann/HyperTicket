@@ -69,8 +69,8 @@ Acceptor::Acceptor(EventLoop* loop, const InetAddress& listenAddr, bool reusepor
     idleFd_(::open("/dev/null", O_RDONLY | O_CLOEXEC))
 {
     assert(idleFd_ >= 0);
-    //acceptSocket_.setReuseAddr(true);
-    //acceptSocket_.setReusePort(reuseport);
+    acceptSocket_.setReuseAddr(true);
+    acceptSocket_.setReusePort(reuseport);
     acceptSocket_.bindAddress(listenAddr);
     acceptChannel_.setReadCallback(std::bind(&Acceptor::handleRead, this));
 }

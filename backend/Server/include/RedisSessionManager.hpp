@@ -43,7 +43,16 @@ namespace hyperticket
         void purgeExpired(int64_t nowMs) override;
 
         // 登出：从 Redis 删除 token
-        void remove(const std::string &token);
+        void remove(const std::string &token) override;
+        void removeAllForUser(int64_t userId) override;
+
+        std::string createAdmin(const std::string &username, bool mustChangePassword,
+                                int64_t nowMs) override;
+        bool resolveAdmin(const std::string &token, int64_t nowMs,
+                          std::string &usernameOut,
+                          bool &mustChangePasswordOut) override;
+        void removeAdmin(const std::string &token) override;
+        void removeAllForAdmin(const std::string &username) override;
 
         // 健康检查：测试 Redis 连接
         bool ping();

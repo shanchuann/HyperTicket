@@ -7,6 +7,7 @@
 #include <random>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 #include "../../Domain/include/ISessionManager.hpp"
 
@@ -52,10 +53,58 @@ namespace hyperticket
         }
 
         // 登出：移除 token。
-        void remove(const std::string &token)
+        void remove(const std::string &token) override
         {
             std::lock_guard<std::mutex> lock(mutex_);
             sessions_.erase(token);
+        }
+
+        void removeAllForUser(int64_t userId) override
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (auto it = sessions_.begin(); it != sessions_.end();)
+                if (it->second.userId == userId) it = sessions_.erase(it);
+                else ++it;
+        }
+
+        std::string createAdmin(const std::string &username, bool mustChangePassword,
+                                int64_t nowMs) override
+        {
+            std::string token = "adm_" + generateToken();
+            std::lock_guard<std::mutex> lock(mutex_);
+            adminSessions_[token] = AdminSession{username, mustChangePassword, nowMs + ttlMs_};
+            return token;
+        }
+
+        bool resolveAdmin(const std::string &token, int64_t nowMs,
+                          std::string &usernameOut, bool &mustChangePasswordOut) override
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            auto it = adminSessions_.find(token);
+            if (it == adminSessions_.end()) return false;
+            if (it->second.expireMs <= nowMs)
+            {
+                adminSessions_.erase(it);
+                return false;
+            }
+            usernameOut = it->second.username;
+            mustChangePasswordOut = it->second.mustChangePassword;
+            it->second.expireMs = nowMs + ttlMs_;
+            return true;
+        }
+
+        void removeAdmin(const std::string &token) override
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            adminSessions_.erase(token);
+        }
+
+        void removeAllForAdmin(const std::string &username) override
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            for (auto it = adminSessions_.begin(); it != adminSessions_.end();)
+                if (it->second.username == username) it = adminSessions_.erase(it);
+                else ++it;
         }
 
         // 定时清理过期 token。
@@ -73,6 +122,11 @@ namespace hyperticket
                     ++it;
                 }
             }
+            for (auto it = adminSessions_.begin(); it != adminSessions_.end();)
+            {
+                if (it->second.expireMs <= nowMs) it = adminSessions_.erase(it);
+                else ++it;
+            }
         }
 
         size_t size()
@@ -86,6 +140,12 @@ namespace hyperticket
         {
             std::string tel;
             int64_t userId;
+            int64_t expireMs;
+        };
+        struct AdminSession
+        {
+            std::string username;
+            bool mustChangePassword;
             int64_t expireMs;
         };
 
@@ -121,6 +181,7 @@ namespace hyperticket
         }
 
         std::unordered_map<std::string, Session> sessions_;
+        std::unordered_map<std::string, AdminSession> adminSessions_;
         std::mutex mutex_;
         int64_t ttlMs_;
     };

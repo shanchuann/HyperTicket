@@ -36,6 +36,11 @@ static void test_enum_values()
     CHECK_EQ((int)PAY_ORDER, 20);
     CHECK_EQ((int)PAY_QUERY, 24);
     CHECK_EQ((int)ORDER_QUERY, 25);
+    CHECK_EQ((int)VERIFICATION_REQUEST, 26);
+    CHECK_EQ((int)VERIFICATION_VERIFY, 27);
+    CHECK_EQ((int)PASSWORD_RESET_REQUEST, 28);
+    CHECK_EQ((int)PASSWORD_RESET_VERIFY, 29);
+    CHECK_EQ((int)PASSWORD_RESET_CONFIRM, 30);
 }
 
 static void test_json_line_roundtrip()

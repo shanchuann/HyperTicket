@@ -35,6 +35,14 @@ namespace hyperticket
             if (!st.ok()) return false;
             st.bindString(0, newHash);
             st.bindString(1, username);
+            return st.execute() && st.affectedRows() == 1;
+        }
+
+        bool recordLoginSuccess(MYSQL *conn, const std::string &username)
+        {
+            MysqlStmt st(conn, "UPDATE admins SET last_login = NOW() WHERE username = ?");
+            if (!st.ok()) return false;
+            st.bindString(0, username);
             return st.execute();
         }
     };

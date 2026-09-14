@@ -33,14 +33,41 @@ namespace hyperticket
 
         // 插入新用户（status=1 正常）。
         bool insert(MYSQL *conn, const std::string &tel, const std::string &username,
-                    const std::string &passwordHash)
+                    const std::string &passwordHash, const std::string &email = "",
+                    const std::string &verifiedChannel = "")
         {
-            MysqlStmt st(conn, "INSERT INTO users (tel, username, password_hash, status) VALUES(?,?,?,1)");
+            MysqlStmt st(conn,
+                "INSERT INTO users (tel,username,password_hash,email,email_verified_at,phone_verified_at,status) "
+                "VALUES(?,?,?,NULLIF(?,''),IF(?='EMAIL',NOW(3),NULL),IF(?='SMS',NOW(3),NULL),1)");
             if (!st.ok()) return false;
             st.bindString(0, tel);
             st.bindString(1, username);
             st.bindString(2, passwordHash);
+            st.bindString(3, email);
+            st.bindString(4, verifiedChannel);
+            st.bindString(5, verifiedChannel);
             return st.execute();
+        }
+
+        bool findByTelOrEmail(MYSQL *conn, const std::string &account, User &out)
+        {
+            MysqlStmt st(conn,
+                "SELECT id,tel,username,password_hash,IFNULL(email,''),status,"
+                "email_verified_at IS NOT NULL,phone_verified_at IS NOT NULL FROM users "
+                "WHERE tel=? OR email=? LIMIT 1");
+            if (!st.ok()) return false;
+            st.bindString(0, account);
+            st.bindString(1, account);
+            if (!st.execute() || !st.bindResults(8) || !st.fetch()) return false;
+            out.id = st.getInt(0);
+            out.tel = st.getString(1);
+            out.username = st.getString(2);
+            out.passwordHash = st.getString(3);
+            out.email = st.getString(4);
+            out.status = static_cast<int>(st.getInt(5));
+            out.emailVerified = st.getInt(6) != 0;
+            out.phoneVerified = st.getInt(7) != 0;
+            return true;
         }
 
         // 列出全部用户（admin 查看所有用户，不含密码哈希）。
@@ -103,6 +130,23 @@ namespace hyperticket
             if (!st.ok()) return false;
             st.bindString(0, newHash);
             st.bindString(1, tel);
+            return st.execute();
+        }
+
+        bool updatePasswordHashById(MYSQL *conn, int64_t userId, const std::string &newHash)
+        {
+            MysqlStmt st(conn, "UPDATE users SET password_hash=? WHERE id=?");
+            if (!st.ok()) return false;
+            st.bindString(0, newHash);
+            st.bindInt(1, userId);
+            return st.execute() && mysql_affected_rows(conn) == 1;
+        }
+
+        bool recordLoginSuccess(MYSQL *conn, const std::string &tel)
+        {
+            MysqlStmt st(conn, "UPDATE users SET last_login = NOW() WHERE tel = ?");
+            if (!st.ok()) return false;
+            st.bindString(0, tel);
             return st.execute();
         }
 

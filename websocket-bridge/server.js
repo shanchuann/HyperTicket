@@ -14,11 +14,29 @@ const TCP_PORT = parseInt(process.env.TCP_PORT || '7000');
 
 const wss = new WebSocket.Server({ port: WS_PORT });
 
+function clientAddress(req) {
+  const forwarded = req.headers['x-forwarded-for'];
+  const value = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  return (value ? value.split(',')[0].trim() : req.socket.remoteAddress || '').slice(0, 64);
+}
+
+function safeLogMessage(raw) {
+  try {
+    const value = JSON.parse(raw);
+    for (const key of ['passward', 'password', 'new_password', 'token', 'admin_token', 'reset_token']) {
+      if (Object.prototype.hasOwnProperty.call(value, key)) value[key] = '[REDACTED]';
+    }
+    return JSON.stringify(value).slice(0, 240);
+  } catch (_) {
+    return '[non-json message]';
+  }
+}
+
 console.log(`[Bridge] WebSocket server listening on ws://localhost:${WS_PORT}`);
 console.log(`[Bridge] Forwarding to TCP ${TCP_HOST}:${TCP_PORT}`);
 
 wss.on('connection', (ws, req) => {
-  const clientIp = req.socket.remoteAddress;
+  const clientIp = clientAddress(req);
   console.log(`[Bridge] New WebSocket client: ${clientIp}`);
 
   const tcp = new net.Socket();
@@ -44,7 +62,7 @@ wss.on('connection', (ws, req) => {
     for (const line of lines) {
       const trimmed = line.trim();
       if (trimmed && ws.readyState === WebSocket.OPEN) {
-        console.log(`[Bridge] Backend → Frontend: ${trimmed.substring(0, 120)}`);
+        console.log(`[Bridge] Backend → Frontend: ${safeLogMessage(trimmed)}`);
         ws.send(trimmed);
       }
     }
@@ -69,11 +87,21 @@ wss.on('connection', (ws, req) => {
   ws.on('message', (data) => {
     const msg = data.toString().trim();
     if (!msg) return;
-    console.log(`[Bridge] Frontend → Backend: ${msg.substring(0, 120)}`);
+    let forwardedMessage;
+    try {
+      const payload = JSON.parse(msg);
+      // The bridge owns this internal field; any browser-provided value is overwritten.
+      payload._gateway_client_ip = clientIp;
+      forwardedMessage = JSON.stringify(payload);
+    } catch (_) {
+      ws.send(JSON.stringify({ status: 'ERR', reason: 'JSON_PARSE' }));
+      return;
+    }
+    console.log(`[Bridge] Frontend → Backend: ${safeLogMessage(forwardedMessage)}`);
     if (tcpReady) {
-      tcp.write(msg + '\n');
+      tcp.write(forwardedMessage + '\n');
     } else {
-      sendQueue.push(msg);
+      sendQueue.push(forwardedMessage);
     }
   });
 

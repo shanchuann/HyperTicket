@@ -68,6 +68,29 @@ static void test_purge()
     CHECK_EQ(sm.size(), 0u);
 }
 
+static void test_remove_all_and_admin_sessions()
+{
+    SessionManager sm(1000);
+    std::string first = sm.create("13800000000", 42, 0);
+    std::string second = sm.create("13800000000", 42, 0);
+    sm.create("13900000000", 99, 0);
+    sm.removeAllForUser(42);
+    std::string tel;
+    int64_t uid = 0;
+    CHECK(!sm.resolve(first, 100, tel, uid));
+    CHECK(!sm.resolve(second, 100, tel, uid));
+
+    std::string admin = sm.createAdmin("admin", true, 0);
+    CHECK_EQ(admin.size(), 68u);
+    std::string username;
+    bool mustChange = false;
+    CHECK(sm.resolveAdmin(admin, 100, username, mustChange));
+    CHECK_STR_EQ(username, "admin");
+    CHECK(mustChange);
+    sm.removeAllForAdmin("admin");
+    CHECK(!sm.resolveAdmin(admin, 100, username, mustChange));
+}
+
 int main()
 {
     RUN_TEST(test_create_resolve);
@@ -76,5 +99,6 @@ int main()
     RUN_TEST(test_sliding_renewal);
     RUN_TEST(test_remove);
     RUN_TEST(test_purge);
+    RUN_TEST(test_remove_all_and_admin_sessions);
     return TEST_SUMMARY();
 }

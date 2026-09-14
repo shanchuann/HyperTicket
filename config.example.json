@@ -41,6 +41,20 @@
     "settle_interval_ms": 500,
     "success_rate_percent": 100
   },
+  "auth": {
+    "max_failures": 5,
+    "failure_window_seconds": 900,
+    "lock_seconds": 900
+  },
+  "verification": {
+    "mock_sms_enabled": false,
+    "expose_mock_sms_code": false,
+    "code_ttl_seconds": 300,
+    "max_attempts": 5,
+    "resend_cooldown_seconds": 60,
+    "grant_ttl_seconds": 600,
+    "require_registration_verification": true
+  },
   "order_queue": {
     "enabled": true,
     "stream": "hyperticket:orders",

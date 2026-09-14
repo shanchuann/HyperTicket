@@ -14,11 +14,14 @@ CREATE TABLE IF NOT EXISTS users (
   password_hash VARCHAR(255) NOT NULL,
   salt VARCHAR(64) DEFAULT NULL,
   email VARCHAR(255) DEFAULT NULL,
+  email_verified_at DATETIME(3) DEFAULT NULL,
+  phone_verified_at DATETIME(3) DEFAULT NULL,
   status TINYINT NOT NULL DEFAULT 1, -- 0=disabled,1=active,2=locked
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   last_login DATETIME DEFAULT NULL,
   UNIQUE KEY uq_users_tel (tel),
+  UNIQUE KEY uq_users_email (email),
   INDEX idx_users_username (username),
   INDEX idx_users_tel_status (tel, status),  -- 复合索引：登录时同时检查手机号和状态
   INDEX idx_users_status (status)            -- 管理端查询黑名单用户
@@ -120,12 +123,61 @@ CREATE TABLE IF NOT EXISTS admins (
   username VARCHAR(64) NOT NULL UNIQUE,
   password_hash VARCHAR(255) NOT NULL,
   role VARCHAR(64) DEFAULT 'operator',
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  last_login DATETIME DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- 默认管理员（用户名: admin，密码: password，bcrypt 哈希）
 INSERT IGNORE INTO admins (username, password_hash, role) VALUES
-  ('admin', '$2b$12$/0yFcwnUmEoY9pkiH.dI5OUrkzielDdM5/gUih9IUweMQDBnmLG7G', 'superadmin');
+  ('admin', '$2b$12$VAyaS3YlHX5emcU6Zf01duPbDdvwfB4uQ8HPuwUr8q3I82XwuouMS', 'superadmin');
+
+-- Shared authentication throttles: account/IP/device counters survive restarts
+-- and are enforced consistently by multiple backend instances.
+CREATE TABLE IF NOT EXISTS auth_throttles (
+  scope VARCHAR(32) NOT NULL,
+  subject VARCHAR(255) NOT NULL,
+  failure_count INT NOT NULL DEFAULT 0,
+  window_started_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  locked_until DATETIME(3) DEFAULT NULL,
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  PRIMARY KEY (scope, subject),
+  INDEX idx_auth_throttle_locked (locked_until)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS security_audit (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  actor_type VARCHAR(16) NOT NULL,
+  actor VARCHAR(255) NOT NULL,
+  event VARCHAR(64) NOT NULL,
+  ip_address VARCHAR(64) NOT NULL DEFAULT '',
+  detail VARCHAR(512) NOT NULL DEFAULT '',
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  INDEX idx_security_actor_time (actor_type, actor, created_at),
+  INDEX idx_security_event_time (event, created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS auth_challenges (
+  id CHAR(64) PRIMARY KEY,
+  user_id INT DEFAULT NULL,
+  subject VARCHAR(255) NOT NULL,
+  destination VARCHAR(255) NOT NULL,
+  purpose VARCHAR(32) NOT NULL,
+  channel VARCHAR(16) NOT NULL,
+  code_hash VARCHAR(255) NOT NULL,
+  attempts INT NOT NULL DEFAULT 0,
+  max_attempts INT NOT NULL DEFAULT 5,
+  expires_at DATETIME(3) NOT NULL,
+  verified_at DATETIME(3) DEFAULT NULL,
+  grant_hash VARCHAR(255) DEFAULT NULL,
+  grant_expires_at DATETIME(3) DEFAULT NULL,
+  consumed_at DATETIME(3) DEFAULT NULL,
+  requested_ip VARCHAR(64) NOT NULL DEFAULT '',
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  INDEX idx_challenge_destination_time (destination, purpose, channel, created_at),
+  INDEX idx_challenge_expiry (expires_at),
+  INDEX idx_challenge_user (user_id, purpose)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Simple audit log for important actions (reservation changes)
 CREATE TABLE IF NOT EXISTS reservation_audit (

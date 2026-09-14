@@ -42,6 +42,11 @@ namespace hyperticket
         // v3 支付模块
         PAY_QUERY      = 24, // 查询支付结果（前端发起支付后轮询）
         ORDER_QUERY    = 25, // 查询异步下单请求状态
+        VERIFICATION_REQUEST = 26,
+        VERIFICATION_VERIFY  = 27,
+        PASSWORD_RESET_REQUEST = 28,
+        PASSWORD_RESET_VERIFY  = 29,
+        PASSWORD_RESET_CONFIRM = 30,
     };
 
     // 协议字段名常量，避免魔法字符串散落各处。
@@ -83,6 +88,13 @@ namespace hyperticket
         constexpr const char *kPaymentNo = "payment_no";        // 支付单号
         constexpr const char *kPaymentStatus = "payment_status"; // PROCESSING/SUCCESS/FAILED/REFUNDED
         constexpr const char *kAmount = "amount";               // 应付金额（元）
+        constexpr const char *kEmail = "email";
+        constexpr const char *kChannel = "channel";
+        constexpr const char *kPurpose = "purpose";
+        constexpr const char *kChallengeId = "challenge_id";
+        constexpr const char *kCode = "code";
+        constexpr const char *kVerificationToken = "verification_token";
+        constexpr const char *kResetToken = "reset_token";
     }
 
     // status 字段取值

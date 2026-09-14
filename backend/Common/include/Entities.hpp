@@ -12,6 +12,9 @@ namespace hyperticket
         std::string tel;
         std::string username;
         std::string passwordHash;
+        std::string email;
+        bool emailVerified = false;
+        bool phoneVerified = false;
         int status = 1;
     };
 
@@ -85,6 +88,20 @@ namespace hyperticket
         std::string username;
         std::string passwordHash;
         std::string role;
+    };
+
+    struct AuthChallenge
+    {
+        std::string id;
+        int64_t userId = 0;
+        std::string subject;
+        std::string destination;
+        std::string purpose;
+        std::string channel;
+        std::string codeHash;
+        std::string grantHash;
+        int attempts = 0;
+        int maxAttempts = 0;
     };
 } // namespace hyperticket
 #endif // HYPERTICKET_ENTITIES_HPP

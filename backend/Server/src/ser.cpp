@@ -11,6 +11,7 @@
 #include "../include/MetricsManager.hpp"
 #include "../include/RateLimiter.hpp"
 #include "../include/SchemaInitializer.hpp"
+#include "../include/VerificationSender.hpp"
 #include "../../Domain/include/service/TicketService.hpp"
 #include "../../Domain/include/ServiceUtil.hpp"
 #include "../../SqlConnPool/include/ConnectionPool.hpp"
@@ -138,7 +139,18 @@ int main()
         metrics = std::make_unique<hyperticket::MetricsManager>(cfg.metrics.port);
     }
 
-    hyperticket::TicketService service(pool, sessionMgr.get(), stockCache.get());
+    hyperticket::VerificationSender verificationSender(cfg.verification);
+    hyperticket::TicketService service(pool, sessionMgr.get(), stockCache.get(), &verificationSender);
+    service.configureAuth(cfg.auth.max_failures, cfg.auth.failure_window_seconds,
+                          cfg.auth.lock_seconds);
+    service.configureVerification(
+        cfg.verification.mock_sms_enabled,
+        cfg.verification.expose_mock_sms_code,
+        cfg.verification.code_ttl_seconds,
+        cfg.verification.max_attempts,
+        cfg.verification.resend_cooldown_seconds,
+        cfg.verification.grant_ttl_seconds,
+        cfg.verification.require_registration_verification);
 
     std::unique_ptr<hyperticket::RedisOrderQueue> orderQueue;
     if (cfg.order_queue.enabled)
@@ -229,6 +241,15 @@ int main()
                 if (metrics) metrics->recordError("json_parse");
                 continue;
             }
+
+            // A loopback-only gateway may forward the original address. Direct remote
+            // clients can never override their socket address.
+            const std::string peerIp = conn->peerAddress().toIp();
+            const std::string gatewayIp = req.get("_gateway_client_ip", "").asString();
+            const bool fromLoopback = peerIp == "127.0.0.1" || peerIp == "::1";
+            req["_client_ip"] = (fromLoopback && !gatewayIp.empty() && gatewayIp.size() <= 64)
+                ? gatewayIp : peerIp;
+            req.removeMember("_gateway_client_ip");
 
             workerPool.add_task([conn, req, &service, &metrics]() {
                 auto start = std::chrono::steady_clock::now();
@@ -321,6 +342,7 @@ int main()
         scheduler.addRunEvery(cfg.order_queue.poll_interval_ms,
             [&service, &cfg]() { service.processQueuedOrders(cfg.order_queue.batch_size); });
     scheduler.addRunEvery(60000, [&sessionMgr]() { sessionMgr->purgeExpired(hyperticket::nowMs()); });
+    scheduler.addRunEvery(300000, [&service]() { service.purgeAuthenticationState(); });
 
     // 定期更新 metrics 资源指标
     if (metrics)

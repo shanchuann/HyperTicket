@@ -70,10 +70,18 @@ namespace hyperticket
             if (s.empty()) return current;
             try { return std::stoi(s); } catch (...) { return current; }
         }
+        bool envOverrideBool(const std::map<std::string, std::string> &dotenv,
+                             const std::string &key, bool current)
+        {
+            const std::string value = envOverride(dotenv, key, "");
+            if (value == "1" || value == "true" || value == "TRUE") return true;
+            if (value == "0" || value == "false" || value == "FALSE") return false;
+            return current;
+        }
 
         // Overlay DB settings from a .env file located next to the config file.
         // Precedence: real process env > .env file > existing cfg values.
-        void applyDbEnv(AppConfig &cfg, const std::string &configPath)
+        void applyEnv(AppConfig &cfg, const std::string &configPath)
         {
             const auto slash = configPath.find_last_of("/\\");
             const std::string dir = (slash == std::string::npos) ? "" : configPath.substr(0, slash + 1);
@@ -83,6 +91,16 @@ namespace hyperticket
             cfg.db.user = envOverride(dotenv, "DB_USER", cfg.db.user);
             cfg.db.password = envOverride(dotenv, "DB_PASSWORD", cfg.db.password);
             cfg.db.name = envOverride(dotenv, "DB_NAME", cfg.db.name);
+            cfg.verification.smtp_host = envOverride(dotenv, "HYPERTICKET_SMTP_HOST", cfg.verification.smtp_host);
+            cfg.verification.smtp_port = envOverrideInt(dotenv, "HYPERTICKET_SMTP_PORT", cfg.verification.smtp_port);
+            cfg.verification.smtp_username = envOverride(dotenv, "HYPERTICKET_SMTP_USERNAME", cfg.verification.smtp_username);
+            cfg.verification.smtp_auth_code = envOverride(dotenv, "HYPERTICKET_SMTP_AUTH_CODE", cfg.verification.smtp_auth_code);
+            cfg.verification.smtp_from = envOverride(dotenv, "HYPERTICKET_SMTP_FROM", cfg.verification.smtp_from);
+            cfg.verification.smtp_from_name = envOverride(dotenv, "HYPERTICKET_SMTP_FROM_NAME", cfg.verification.smtp_from_name);
+            cfg.verification.smtp_use_tls = envOverrideBool(dotenv, "HYPERTICKET_SMTP_USE_TLS", cfg.verification.smtp_use_tls);
+            cfg.verification.email_enabled = !cfg.verification.smtp_host.empty() &&
+                                             !cfg.verification.smtp_username.empty() &&
+                                             !cfg.verification.smtp_auth_code.empty();
         }
     } // namespace
 
@@ -93,7 +111,7 @@ namespace hyperticket
         if (!in.good())
         {
             if (error) *error = "config file not found, using defaults";
-            applyDbEnv(cfg, path);
+            applyEnv(cfg, path);
             return cfg;
         }
 
@@ -104,7 +122,7 @@ namespace hyperticket
         if (!Json::parseFromStream(builder, in, &root, &errs))
         {
             if (error) *error = std::string("config parse failed: ") + errs;
-            applyDbEnv(cfg, path);
+            applyEnv(cfg, path);
             return cfg;
         }
 
@@ -171,6 +189,26 @@ namespace hyperticket
             cfg.payment.success_rate_percent = getInt(payment, "success_rate_percent", cfg.payment.success_rate_percent);
         }
 
+        if (root.isMember("auth"))
+        {
+            const Json::Value &auth = root["auth"];
+            cfg.auth.max_failures = getInt(auth, "max_failures", cfg.auth.max_failures);
+            cfg.auth.failure_window_seconds = getInt(auth, "failure_window_seconds", cfg.auth.failure_window_seconds);
+            cfg.auth.lock_seconds = getInt(auth, "lock_seconds", cfg.auth.lock_seconds);
+        }
+
+        if (root.isMember("verification"))
+        {
+            const Json::Value &verification = root["verification"];
+            cfg.verification.mock_sms_enabled = verification.get("mock_sms_enabled", cfg.verification.mock_sms_enabled).asBool();
+            cfg.verification.expose_mock_sms_code = verification.get("expose_mock_sms_code", cfg.verification.expose_mock_sms_code).asBool();
+            cfg.verification.code_ttl_seconds = getInt(verification, "code_ttl_seconds", cfg.verification.code_ttl_seconds);
+            cfg.verification.max_attempts = getInt(verification, "max_attempts", cfg.verification.max_attempts);
+            cfg.verification.resend_cooldown_seconds = getInt(verification, "resend_cooldown_seconds", cfg.verification.resend_cooldown_seconds);
+            cfg.verification.grant_ttl_seconds = getInt(verification, "grant_ttl_seconds", cfg.verification.grant_ttl_seconds);
+            cfg.verification.require_registration_verification = verification.get("require_registration_verification", cfg.verification.require_registration_verification).asBool();
+        }
+
         if (root.isMember("order_queue"))
         {
             const Json::Value &queue = root["order_queue"];
@@ -185,7 +223,7 @@ namespace hyperticket
         }
 
         // Overlay DB settings from .env (precedence: process env > .env > config.json).
-        applyDbEnv(cfg, path);
+        applyEnv(cfg, path);
         return cfg;
     }
 } // namespace hyperticket

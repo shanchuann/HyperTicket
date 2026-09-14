@@ -5,6 +5,7 @@
 #include "../../../Common/include/Protocol.hpp"
 #include "../../../Common/include/Errors.hpp"
 #include "../../include/ServiceUtil.hpp"
+#include "../../include/service/Txn.hpp"
 #include "../../../ChronoLite/include/Logger.hpp"
 
 namespace hyperticket
@@ -16,7 +17,7 @@ namespace hyperticket
         {
         case LOGIN:              return login(req);
         case REGISTER:           return reg(req);
-        case EXIT:               return makeOk();
+        case EXIT:               return logout(req);
         case VIEW:               return viewTickets(req);
         case ORDER:              return orderTicket(req);
         case VIEW_MY:            return viewMyTickets(req);
@@ -36,6 +37,11 @@ namespace hyperticket
         case PAY_ORDER:             return payOrder(req);
         case PAY_QUERY:             return queryPayment(req);
         case ORDER_QUERY:           return queryQueuedOrder(req);
+        case VERIFICATION_REQUEST:  return requestVerification(req);
+        case VERIFICATION_VERIFY:   return verifyRegistrationCode(req);
+        case PASSWORD_RESET_REQUEST:return requestPasswordReset(req);
+        case PASSWORD_RESET_VERIFY: return verifyPasswordReset(req);
+        case PASSWORD_RESET_CONFIRM:return confirmPasswordReset(req);
         case FAVORITE:              return favorite(req);
         case VIEW_FAVORITES:        return viewFavorites(req);
         case HOT_TICKETS:           return hotTickets(req);
@@ -47,7 +53,7 @@ namespace hyperticket
     {
         std::string tel = req.get(field::kUserTel, "").asString();
         std::string passwd = req.get(field::kPassword, "").asString();
-        if (tel.size() != 11 || passwd.size() < 6 || passwd.size() > 16)
+        if (tel.size() != 11 || passwd.size() < 6 || passwd.size() > 64)
         {
             return makeError(err::kInvalidInput);
         }
@@ -56,9 +62,29 @@ namespace hyperticket
         shanchuan::ConnectionGuard raii(&conn, pool_);
         if (!conn) return makeError(err::kDbUnavailable);
 
+        const std::string ip = req.get("_client_ip", "").asString();
+        const std::string device = req.get("client_id", "").asString().substr(0, 128);
+        int64_t retryAfter = 0;
+        if (!authRepo_.isBlocked(conn, "user_account", tel, retryAfter))
+            return makeError(err::kDbUnavailable);
+        if (retryAfter == 0 && !ip.empty() && !authRepo_.isBlocked(conn, "ip", ip, retryAfter))
+            return makeError(err::kDbUnavailable);
+        if (retryAfter == 0 && !device.empty() && !authRepo_.isBlocked(conn, "device", device, retryAfter))
+            return makeError(err::kDbUnavailable);
+        if (retryAfter > 0)
+        {
+            Json::Value res = makeError("AUTH_TEMPORARILY_LOCKED");
+            res["retry_after_seconds"] = static_cast<Json::Int64>(retryAfter);
+            return res;
+        }
+
         User u;
         if (!userRepo_.findByTel(conn, tel, u))
         {
+            authRepo_.recordFailure(conn, "user_account", tel, authFailureWindowSeconds_, authMaxFailures_, authLockSeconds_);
+            if (!ip.empty()) authRepo_.recordFailure(conn, "ip", ip, authFailureWindowSeconds_, authMaxFailures_ * 4, authLockSeconds_);
+            if (!device.empty()) authRepo_.recordFailure(conn, "device", device, authFailureWindowSeconds_, authMaxFailures_ * 2, authLockSeconds_);
+            authRepo_.audit(conn, "user", tel, "LOGIN_FAILURE", ip, "invalid_credentials");
             return makeError(err::kInvalidCredentials);
         }
         if (u.status != 1)
@@ -68,6 +94,10 @@ namespace hyperticket
         bool needRehash = false;
         if (!verifyPassword(passwd, u.passwordHash, needRehash))
         {
+            authRepo_.recordFailure(conn, "user_account", tel, authFailureWindowSeconds_, authMaxFailures_, authLockSeconds_);
+            if (!ip.empty()) authRepo_.recordFailure(conn, "ip", ip, authFailureWindowSeconds_, authMaxFailures_ * 4, authLockSeconds_);
+            if (!device.empty()) authRepo_.recordFailure(conn, "device", device, authFailureWindowSeconds_, authMaxFailures_ * 2, authLockSeconds_);
+            authRepo_.audit(conn, "user", tel, "LOGIN_FAILURE", ip, "invalid_credentials");
             return makeError(err::kInvalidCredentials);
         }
         // 旧 FNV-1a 哈希自动升级为 bcrypt
@@ -84,22 +114,50 @@ namespace hyperticket
             // Redis 故障导致签发失败：明确报错，不能返回空 token 的"假成功"
             return makeError("SESSION_UNAVAILABLE");
         }
+        userRepo_.recordLoginSuccess(conn, tel);
+        authRepo_.clear(conn, "user_account", tel);
+        if (!device.empty()) authRepo_.clear(conn, "device", device);
+        authRepo_.audit(conn, "user", tel, "LOGIN_SUCCESS", ip, "");
         res[field::kToken] = token;
         return res;
     }
 
-    // 密码强度校验：6-16 位，须包含数字、小写字母、大写字母。
+    Json::Value TicketService::logout(const Json::Value &req)
+    {
+        const std::string ip = req.get("_client_ip", "").asString();
+        const std::string token = req.get(field::kToken, "").asString();
+        const std::string adminToken = req.get(field::kAdminToken, "").asString();
+        if (!token.empty())
+        {
+            std::string tel;
+            int64_t userId = 0;
+            if (!sessions_->resolve(token, nowMs(), tel, userId))
+                return makeError(err::kUnauthorized);
+            sessions_->remove(token);
+            MYSQL *conn = nullptr;
+            shanchuan::ConnectionGuard raii(&conn, pool_);
+            if (conn) authRepo_.audit(conn, "user", tel, "LOGOUT", ip, "");
+            return makeOk();
+        }
+        if (!adminToken.empty())
+        {
+            std::string username;
+            bool mustChange = false;
+            if (!sessions_->resolveAdmin(adminToken, nowMs(), username, mustChange))
+                return makeError(err::kAdminUnauthorized);
+            sessions_->removeAdmin(adminToken);
+            MYSQL *conn = nullptr;
+            shanchuan::ConnectionGuard raii(&conn, pool_);
+            if (conn) authRepo_.audit(conn, "admin", username, "LOGOUT", ip, "");
+            return makeOk();
+        }
+        return makeError(err::kInvalidInput);
+    }
+
+    // 新密码强度：8-64 位，须包含数字、小写字母、大写字母。
     static bool isPasswordStrong(const std::string &pwd)
     {
-        if (pwd.size() < 6 || pwd.size() > 16) return false;
-        bool hasDigit = false, hasLower = false, hasUpper = false;
-        for (unsigned char ch : pwd)
-        {
-            if (ch >= '0' && ch <= '9') hasDigit = true;
-            else if (ch >= 'a' && ch <= 'z') hasLower = true;
-            else if (ch >= 'A' && ch <= 'Z') hasUpper = true;
-        }
-        return hasDigit && hasLower && hasUpper;
+        return isStrongPassword(pwd);
     }
 
     Json::Value TicketService::reg(const Json::Value &req)
@@ -120,15 +178,37 @@ namespace hyperticket
         shanchuan::ConnectionGuard raii(&conn, pool_);
         if (!conn) return makeError(err::kDbUnavailable);
 
-        if (!userRepo_.insert(conn, tel, name, hashPassword(passwd)))
+        Txn txn(conn);
+        if (!txn.ok()) return makeError(err::kDbBegin);
+        AuthChallenge challenge;
+        std::string email = req.get(field::kEmail, "").asString();
+        std::string verifiedChannel;
+        if (requireRegistrationVerification_)
         {
+            if (!consumeGrant(conn, req.get(field::kVerificationToken, "").asString(),
+                              "REGISTER", challenge) || challenge.subject != tel)
+            {
+                txn.rollback();
+                return makeError("VERIFICATION_REQUIRED");
+            }
+            verifiedChannel = challenge.channel;
+            if (verifiedChannel == "EMAIL") email = challenge.destination;
+        }
+
+        if (!userRepo_.insert(conn, tel, name, hashPassword(passwd), email, verifiedChannel))
+        {
+            txn.rollback();
             return makeError(err::kDbInsert);
         }
         User u;
         if (!userRepo_.findByTel(conn, tel, u))
         {
+            txn.rollback();
             return makeError(err::kDbInsert); // 刚插入却查不到，视为失败
         }
+        authRepo_.audit(conn, "user", tel, "REGISTERED",
+                        req.get("_client_ip", "").asString(), verifiedChannel);
+        if (!txn.commit()) return makeError(err::kDbUpdate);
         Json::Value res = makeOk();
         res[field::kUserName] = u.username;
         std::string token = sessions_->create(tel, u.id, nowMs());

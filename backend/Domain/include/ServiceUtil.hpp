@@ -6,6 +6,7 @@
 #include <sstream>
 #include <string>
 #include <random>
+#include <fstream>
 
 #include <jsoncpp/json/json.h>
 
@@ -17,6 +18,45 @@ namespace hyperticket
     inline int64_t nowMs()
     {
         return logsys::Timestamp::Now().getMicroSec() / 1000;
+    }
+
+    inline std::string secureRandomHex(size_t bytes = 32)
+    {
+        static const char hex[] = "0123456789abcdef";
+        std::string output(bytes * 2, '0');
+        std::ifstream urandom("/dev/urandom", std::ios::binary);
+        std::random_device rd;
+        for (size_t i = 0; i < bytes; ++i)
+        {
+            unsigned char value = 0;
+            if (!(urandom.good() && urandom.read(reinterpret_cast<char *>(&value), 1)))
+                value = static_cast<unsigned char>(rd() & 0xff);
+            output[i * 2] = hex[value >> 4];
+            output[i * 2 + 1] = hex[value & 0x0f];
+        }
+        return output;
+    }
+
+    inline std::string generateNumericCode()
+    {
+        std::random_device rd;
+        std::uniform_int_distribution<int> dist(0, 999999);
+        const int value = dist(rd);
+        std::string code = std::to_string(value);
+        return std::string(6 - code.size(), '0') + code;
+    }
+
+    inline bool isStrongPassword(const std::string &pwd)
+    {
+        if (pwd.size() < 8 || pwd.size() > 64) return false;
+        bool digit = false, lower = false, upper = false;
+        for (unsigned char ch : pwd)
+        {
+            digit = digit || (ch >= '0' && ch <= '9');
+            lower = lower || (ch >= 'a' && ch <= 'z');
+            upper = upper || (ch >= 'A' && ch <= 'Z');
+        }
+        return digit && lower && upper;
     }
 
     // 容错读取整型字段：兼容数字与数字字符串（前端 index 等字段以字符串发送）。

@@ -10,6 +10,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_SOURCE_DIR}/bin)
 
 find_package(Threads REQUIRED)
+find_package(OpenSSL REQUIRED)
 
 find_library(JSONCPP_LIB jsoncpp)
 if(NOT JSONCPP_LIB)
@@ -42,6 +43,7 @@ set(DOMAIN_SRC
 	backend/Domain/src/service/TicketServiceTxn.cpp
 	backend/Domain/src/service/TicketServicePay.cpp
 	backend/Domain/src/service/TicketServiceAdmin.cpp
+	backend/Domain/src/service/TicketServiceAuth.cpp
 	backend/Domain/src/ServiceUtil.cpp
 )
 
@@ -62,6 +64,7 @@ set(SERVER_SRC
 	backend/Server/src/RedisConnPool.cpp
 	backend/Server/src/RedisStockCache.cpp
 	backend/Server/src/RedisOrderQueue.cpp
+	backend/Server/src/VerificationSender.cpp
 	${DOMAIN_SRC}
 	backend/SqlConnPool/src/ConnectionPool.cpp
 	backend/ScheduledThreadPool/src/Timer.cpp
@@ -97,7 +100,7 @@ target_include_directories(ser PRIVATE
 	backend/ChronoLite/include
 	backend/FixedThreadPool/include
 )
-target_link_libraries(ser PRIVATE ${JSONCPP_LIB} ${MYSQLCLIENT_LIB} crypt Threads::Threads)
+target_link_libraries(ser PRIVATE ${JSONCPP_LIB} ${MYSQLCLIENT_LIB} crypt Threads::Threads OpenSSL::SSL OpenSSL::Crypto)
 if(HIREDIS_LIB)
 	target_link_libraries(ser PRIVATE ${HIREDIS_LIB})
 endif()

@@ -98,6 +98,12 @@ namespace hyperticket
             cfg.verification.smtp_from = envOverride(dotenv, "HYPERTICKET_SMTP_FROM", cfg.verification.smtp_from);
             cfg.verification.smtp_from_name = envOverride(dotenv, "HYPERTICKET_SMTP_FROM_NAME", cfg.verification.smtp_from_name);
             cfg.verification.smtp_use_tls = envOverrideBool(dotenv, "HYPERTICKET_SMTP_USE_TLS", cfg.verification.smtp_use_tls);
+            cfg.verification.development_inbox_enabled = envOverrideBool(
+                dotenv, "HYPERTICKET_VERIFICATION_DEV_INBOX_ENABLED",
+                cfg.verification.development_inbox_enabled);
+            cfg.verification.development_inbox_path = envOverride(
+                dotenv, "HYPERTICKET_VERIFICATION_DEV_INBOX_PATH",
+                cfg.verification.development_inbox_path);
             cfg.verification.email_enabled = !cfg.verification.smtp_host.empty() &&
                                              !cfg.verification.smtp_username.empty() &&
                                              !cfg.verification.smtp_auth_code.empty();
@@ -202,9 +208,12 @@ namespace hyperticket
             const Json::Value &verification = root["verification"];
             cfg.verification.mock_sms_enabled = verification.get("mock_sms_enabled", cfg.verification.mock_sms_enabled).asBool();
             cfg.verification.expose_mock_sms_code = verification.get("expose_mock_sms_code", cfg.verification.expose_mock_sms_code).asBool();
+            cfg.verification.development_inbox_enabled = verification.get("development_inbox_enabled", cfg.verification.development_inbox_enabled).asBool();
+            cfg.verification.development_inbox_path = getString(verification, "development_inbox_path", cfg.verification.development_inbox_path);
             cfg.verification.code_ttl_seconds = getInt(verification, "code_ttl_seconds", cfg.verification.code_ttl_seconds);
             cfg.verification.max_attempts = getInt(verification, "max_attempts", cfg.verification.max_attempts);
             cfg.verification.resend_cooldown_seconds = getInt(verification, "resend_cooldown_seconds", cfg.verification.resend_cooldown_seconds);
+            cfg.verification.daily_send_limit = getInt(verification, "daily_send_limit", cfg.verification.daily_send_limit);
             cfg.verification.grant_ttl_seconds = getInt(verification, "grant_ttl_seconds", cfg.verification.grant_ttl_seconds);
             cfg.verification.require_registration_verification = verification.get("require_registration_verification", cfg.verification.require_registration_verification).asBool();
         }

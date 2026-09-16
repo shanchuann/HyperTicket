@@ -11,7 +11,8 @@
 #include "../include/MetricsManager.hpp"
 #include "../include/RateLimiter.hpp"
 #include "../include/SchemaInitializer.hpp"
-#include "../include/VerificationSender.hpp"
+#include "../include/VerificationProvider.hpp"
+#include "../include/MockPaymentProvider.hpp"
 #include "../../Domain/include/service/TicketService.hpp"
 #include "../../Domain/include/ServiceUtil.hpp"
 #include "../../SqlConnPool/include/ConnectionPool.hpp"
@@ -139,16 +140,19 @@ int main()
         metrics = std::make_unique<hyperticket::MetricsManager>(cfg.metrics.port);
     }
 
-    hyperticket::VerificationSender verificationSender(cfg.verification);
-    hyperticket::TicketService service(pool, sessionMgr.get(), stockCache.get(), &verificationSender);
+    hyperticket::VerificationProvider verificationProvider(cfg.verification);
+    hyperticket::MockPaymentProvider mockPaymentProvider(cfg.payment.success_rate_percent);
+    hyperticket::TicketService service(pool, sessionMgr.get(), stockCache.get(), &verificationProvider);
+    service.configurePaymentProvider(&mockPaymentProvider);
     service.configureAuth(cfg.auth.max_failures, cfg.auth.failure_window_seconds,
                           cfg.auth.lock_seconds);
     service.configureVerification(
-        cfg.verification.mock_sms_enabled,
+        cfg.verification.mock_sms_enabled || cfg.verification.development_inbox_enabled,
         cfg.verification.expose_mock_sms_code,
         cfg.verification.code_ttl_seconds,
         cfg.verification.max_attempts,
         cfg.verification.resend_cooldown_seconds,
+        cfg.verification.daily_send_limit,
         cfg.verification.grant_ttl_seconds,
         cfg.verification.require_registration_verification);
 

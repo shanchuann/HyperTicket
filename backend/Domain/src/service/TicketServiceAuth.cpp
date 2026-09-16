@@ -39,7 +39,7 @@ namespace hyperticket
 
     Json::Value TicketService::requestVerification(const Json::Value &req)
     {
-        if (!verificationSender_) return makeError("VERIFICATION_UNAVAILABLE");
+        if (!verificationProvider_) return makeError("VERIFICATION_UNAVAILABLE");
         const std::string tel = req.get(field::kUserTel, "").asString();
         const std::string channel = req.get(field::kChannel, "EMAIL").asString();
         const std::string destination = channel == "EMAIL"
@@ -59,15 +59,23 @@ namespace hyperticket
         if ((!ip.empty() && (!authRepo_.isBlocked(conn, "verification_ip", ip, retryAfter) || retryAfter > 0)) ||
             (!device.empty() && (!authRepo_.isBlocked(conn, "verification_device", device, retryAfter) || retryAfter > 0)) ||
             !authRepo_.isBlocked(conn, "verification_destination", destination, retryAfter) || retryAfter > 0)
+        {
+            authRepo_.audit(conn, "anonymous", tel, "OTP_SEND_REJECTED", ip,
+                            channel + ":shared_rate_limit");
             return makeError("VERIFICATION_RATE_LIMITED");
+        }
 
         User existing;
         if (userRepo_.findByTel(conn, tel, existing) ||
             (channel == "EMAIL" && userRepo_.findByTelOrEmail(conn, destination, existing)))
             return makeError("ACCOUNT_ALREADY_EXISTS");
         if (!challengeRepo_.canSend(conn, "REGISTER", channel, destination,
-                                    resendCooldownSeconds_))
-            return makeError("VERIFICATION_COOLDOWN");
+                                    resendCooldownSeconds_, verificationDailySendLimit_))
+        {
+            authRepo_.audit(conn, "anonymous", tel, "OTP_SEND_REJECTED", ip,
+                            channel + ":cooldown_or_daily_limit");
+            return makeError("VERIFICATION_RATE_LIMITED");
+        }
 
         const std::string id = secureRandomHex();
         const std::string code = generateNumericCode();
@@ -76,18 +84,17 @@ namespace hyperticket
             return makeError(err::kDbInsert);
 
         std::string deliveryError;
-        const bool delivered = channel == "EMAIL"
-            ? verificationSender_->sendEmailCode(destination, code, "REGISTER", deliveryError)
-            : verificationSender_->sendMockSmsCode(destination, code, "REGISTER", deliveryError);
+        const bool delivered = verificationProvider_->sendCode(
+            channel, destination, code, "REGISTER", deliveryError);
         if (!delivered)
         {
             challengeRepo_.remove(conn, id);
-            authRepo_.audit(conn, "anonymous", tel, "VERIFICATION_DELIVERY_FAILED",
+            authRepo_.audit(conn, "anonymous", tel, "OTP_DELIVERY_FAILED",
                             req.get("_client_ip", "").asString(), deliveryError);
             return makeError("VERIFICATION_DELIVERY_FAILED");
         }
 
-        authRepo_.audit(conn, "anonymous", tel, "VERIFICATION_SENT",
+        authRepo_.audit(conn, "anonymous", tel, "OTP_SENT",
                         req.get("_client_ip", "").asString(), channel);
         if (!ip.empty()) authRepo_.recordFailure(conn, "verification_ip", ip, 900, 20, 900);
         if (!device.empty()) authRepo_.recordFailure(conn, "verification_device", device, 900, 10, 900);
@@ -111,21 +118,28 @@ namespace hyperticket
         if (!txn.ok() || !challengeRepo_.lockActive(conn, id, "REGISTER", challenge))
         {
             txn.rollback();
+            authRepo_.audit(conn, "anonymous", id, "OTP_VERIFY_REJECTED",
+                            req.get("_client_ip", "").asString(),
+                            "REGISTER:expired_consumed_or_attempts_exhausted");
             return makeError("INVALID_OR_EXPIRED_CODE");
         }
-        bool rehash = false;
-        if (!verifyPassword(code, challenge.codeHash, rehash))
+        if (!verificationProvider_ || !verificationProvider_->verifyCode(code, challenge.codeHash))
         {
             challengeRepo_.recordFailedAttempt(conn, id);
+            authRepo_.audit(conn, "anonymous", challenge.subject, "OTP_VERIFY_FAILED",
+                            req.get("_client_ip", "").asString(), "REGISTER");
             txn.commit();
             return makeError("INVALID_OR_EXPIRED_CODE");
         }
         const std::string secret = secureRandomHex();
-        if (!challengeRepo_.markVerified(conn, id, hashPassword(secret), grantTtlSeconds_) || !txn.commit())
+        if (!challengeRepo_.markVerified(conn, id, hashPassword(secret), grantTtlSeconds_))
         {
             txn.rollback();
             return makeError(err::kDbUpdate);
         }
+        authRepo_.audit(conn, "anonymous", challenge.subject, "OTP_VERIFIED",
+                        req.get("_client_ip", "").asString(), "REGISTER");
+        if (!txn.commit()) return makeError(err::kDbUpdate);
         Json::Value response = makeOk();
         response[field::kVerificationToken] = id + "." + secret;
         response["expires_in_seconds"] = grantTtlSeconds_;
@@ -167,20 +181,29 @@ namespace hyperticket
         int64_t retryAfter = 0;
         if ((!ip.empty() && (!authRepo_.isBlocked(conn, "verification_ip", ip, retryAfter) || retryAfter > 0)) ||
             (!device.empty() && (!authRepo_.isBlocked(conn, "verification_device", device, retryAfter) || retryAfter > 0)))
+        {
+            authRepo_.audit(conn, "anonymous", account, "OTP_SEND_REJECTED", ip,
+                            channel + ":shared_rate_limit");
             return response;
+        }
         User user;
         if (!userRepo_.findByTelOrEmail(conn, account, user) || user.status != 1 ||
-            !verificationSender_ || (channel == "SMS" && !mockSmsEnabled_))
+            !verificationProvider_ || (channel == "SMS" && !mockSmsEnabled_))
             return response;
 
         const std::string destination = channel == "EMAIL" ? user.email : user.tel;
         if ((channel == "EMAIL" && (!user.emailVerified || !validEmail(destination))) ||
-            (channel == "SMS" && !user.phoneVerified) ||
-            !authRepo_.isBlocked(conn, "verification_destination", destination, retryAfter) ||
+            (channel == "SMS" && !user.phoneVerified))
+            return response;
+        if (!authRepo_.isBlocked(conn, "verification_destination", destination, retryAfter) ||
             retryAfter > 0 ||
             !challengeRepo_.canSend(conn, "PASSWORD_RESET", channel, destination,
-                                    resendCooldownSeconds_))
+                                    resendCooldownSeconds_, verificationDailySendLimit_))
+        {
+            authRepo_.audit(conn, "user", user.tel, "OTP_SEND_REJECTED", ip,
+                            channel + ":cooldown_or_daily_limit");
             return response;
+        }
 
         const std::string code = generateNumericCode();
         if (!challengeRepo_.insert(conn, responseId, user.id, user.tel, destination,
@@ -189,15 +212,18 @@ namespace hyperticket
             return response;
 
         std::string deliveryError;
-        const bool delivered = channel == "EMAIL"
-            ? verificationSender_->sendEmailCode(destination, code, "PASSWORD_RESET", deliveryError)
-            : verificationSender_->sendMockSmsCode(destination, code, "PASSWORD_RESET", deliveryError);
+        const bool delivered = verificationProvider_->sendCode(
+            channel, destination, code, "PASSWORD_RESET", deliveryError);
         if (!delivered)
         {
             challengeRepo_.remove(conn, responseId);
+            authRepo_.audit(conn, "user", user.tel, "OTP_DELIVERY_FAILED", ip,
+                            deliveryError);
             LOG_ERROR << "Password reset delivery failed: " << deliveryError;
             return response;
         }
+        authRepo_.audit(conn, "user", user.tel, "OTP_SENT", ip,
+                        channel + ":PASSWORD_RESET");
         authRepo_.audit(conn, "user", user.tel, "PASSWORD_RESET_REQUESTED",
                         req.get("_client_ip", "").asString(), channel);
         if (!ip.empty()) authRepo_.recordFailure(conn, "verification_ip", ip, 900, 20, 900);
@@ -223,21 +249,28 @@ namespace hyperticket
             static const std::string dummy = hashPassword("000000");
             bool ignored = false;
             verifyPassword(code, dummy, ignored);
+            authRepo_.audit(conn, "anonymous", id, "OTP_VERIFY_REJECTED",
+                            req.get("_client_ip", "").asString(),
+                            "PASSWORD_RESET:expired_consumed_or_attempts_exhausted");
             return makeError("INVALID_OR_EXPIRED_CODE");
         }
-        bool rehash = false;
-        if (!verifyPassword(code, challenge.codeHash, rehash))
+        if (!verificationProvider_ || !verificationProvider_->verifyCode(code, challenge.codeHash))
         {
             challengeRepo_.recordFailedAttempt(conn, id);
+            authRepo_.audit(conn, "user", challenge.subject, "OTP_VERIFY_FAILED",
+                            req.get("_client_ip", "").asString(), "PASSWORD_RESET");
             txn.commit();
             return makeError("INVALID_OR_EXPIRED_CODE");
         }
         const std::string secret = secureRandomHex();
-        if (!challengeRepo_.markVerified(conn, id, hashPassword(secret), grantTtlSeconds_) || !txn.commit())
+        if (!challengeRepo_.markVerified(conn, id, hashPassword(secret), grantTtlSeconds_))
         {
             txn.rollback();
             return makeError(err::kDbUpdate);
         }
+        authRepo_.audit(conn, "user", challenge.subject, "OTP_VERIFIED",
+                        req.get("_client_ip", "").asString(), "PASSWORD_RESET");
+        if (!txn.commit()) return makeError(err::kDbUpdate);
         Json::Value response = makeOk();
         response[field::kResetToken] = id + "." + secret;
         response["expires_in_seconds"] = grantTtlSeconds_;
@@ -296,7 +329,7 @@ namespace hyperticket
 
     Json::Value TicketService::requestContactVerification(const Json::Value &req)
     {
-        if (!verificationSender_) return makeError("VERIFICATION_UNAVAILABLE");
+        if (!verificationProvider_) return makeError("VERIFICATION_UNAVAILABLE");
         const std::string token = req.get(field::kToken, "").asString();
         const std::string password = req.get(field::kPassword, "").asString();
         const std::string channel = req.get(field::kChannel, "").asString();
@@ -356,10 +389,18 @@ namespace hyperticket
         if ((!ip.empty() && (!authRepo_.isBlocked(conn, "verification_ip", ip, retryAfter) || retryAfter > 0)) ||
             (!device.empty() && (!authRepo_.isBlocked(conn, "verification_device", device, retryAfter) || retryAfter > 0)) ||
             !authRepo_.isBlocked(conn, "verification_destination", destination, retryAfter) || retryAfter > 0)
+        {
+            authRepo_.audit(conn, "user", tel, "OTP_SEND_REJECTED", ip,
+                            channel + ":shared_rate_limit");
             return makeError("VERIFICATION_RATE_LIMITED");
+        }
         if (!challengeRepo_.canSend(conn, "CONTACT", channel, destination,
-                                    resendCooldownSeconds_))
-            return makeError("VERIFICATION_COOLDOWN");
+                                    resendCooldownSeconds_, verificationDailySendLimit_))
+        {
+            authRepo_.audit(conn, "user", tel, "OTP_SEND_REJECTED", ip,
+                            channel + ":cooldown_or_daily_limit");
+            return makeError("VERIFICATION_RATE_LIMITED");
+        }
 
         const std::string id = secureRandomHex();
         const std::string code = generateNumericCode();
@@ -368,18 +409,17 @@ namespace hyperticket
             return makeError(err::kDbInsert);
 
         std::string deliveryError;
-        const bool delivered = channel == "EMAIL"
-            ? verificationSender_->sendEmailCode(destination, code, "CONTACT", deliveryError)
-            : verificationSender_->sendMockSmsCode(destination, code, "CONTACT", deliveryError);
+        const bool delivered = verificationProvider_->sendCode(
+            channel, destination, code, "CONTACT", deliveryError);
         if (!delivered)
         {
             challengeRepo_.remove(conn, id);
-            authRepo_.audit(conn, "user", tel, "CONTACT_VERIFICATION_DELIVERY_FAILED",
+            authRepo_.audit(conn, "user", tel, "OTP_DELIVERY_FAILED",
                             ip, deliveryError);
             return makeError("VERIFICATION_DELIVERY_FAILED");
         }
 
-        authRepo_.audit(conn, "user", tel, "CONTACT_VERIFICATION_SENT", ip, channel);
+        authRepo_.audit(conn, "user", tel, "OTP_SENT", ip, channel + ":CONTACT");
         if (!ip.empty()) authRepo_.recordFailure(conn, "verification_ip", ip, 900, 20, 900);
         if (!device.empty()) authRepo_.recordFailure(conn, "verification_device", device, 900, 10, 900);
         authRepo_.recordFailure(conn, "verification_destination", destination, 86400, 10, 86400);
@@ -410,13 +450,17 @@ namespace hyperticket
             challenge.userId != userId || challenge.subject != tel)
         {
             txn.rollback();
+            authRepo_.audit(conn, "user", tel, "OTP_VERIFY_REJECTED",
+                            req.get("_client_ip", "").asString(),
+                            "CONTACT:expired_consumed_replayed_or_wrong_owner");
             return makeError("INVALID_OR_EXPIRED_CODE");
         }
 
-        bool rehash = false;
-        if (!verifyPassword(code, challenge.codeHash, rehash))
+        if (!verificationProvider_ || !verificationProvider_->verifyCode(code, challenge.codeHash))
         {
             challengeRepo_.recordFailedAttempt(conn, id);
+            authRepo_.audit(conn, "user", tel, "OTP_VERIFY_FAILED",
+                            req.get("_client_ip", "").asString(), "CONTACT");
             txn.commit();
             return makeError("INVALID_OR_EXPIRED_CODE");
         }
@@ -445,6 +489,8 @@ namespace hyperticket
 
         authRepo_.audit(conn, "user", tel, "CONTACT_VERIFIED",
                         req.get("_client_ip", "").asString(), challenge.channel);
+        authRepo_.audit(conn, "user", tel, "OTP_VERIFIED",
+                        req.get("_client_ip", "").asString(), "CONTACT");
         if (!txn.commit()) return makeError(err::kDbUpdate);
 
         User updatedUser;

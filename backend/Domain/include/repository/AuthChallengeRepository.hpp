@@ -14,17 +14,20 @@ namespace hyperticket
     public:
         bool canSend(MYSQL *conn, const std::string &purpose,
                      const std::string &channel, const std::string &destination,
-                     int cooldownSeconds)
+                     int cooldownSeconds, int dailyLimit)
         {
             MysqlStmt st(conn,
-                "SELECT COUNT(*) FROM auth_challenges WHERE purpose=? AND channel=? "
-                "AND destination=? AND created_at > DATE_SUB(NOW(3), INTERVAL ? SECOND)");
+                "SELECT "
+                "SUM(created_at > DATE_SUB(NOW(3), INTERVAL ? SECOND)), "
+                "SUM(created_at >= CURRENT_DATE()) "
+                "FROM auth_challenges WHERE purpose=? AND channel=? AND destination=?");
             if (!st.ok()) return false;
-            st.bindString(0, purpose);
-            st.bindString(1, channel);
-            st.bindString(2, destination);
-            st.bindInt(3, cooldownSeconds);
-            return st.execute() && st.bindResults(1) && st.fetch() && st.getInt(0) == 0;
+            st.bindInt(0, cooldownSeconds);
+            st.bindString(1, purpose);
+            st.bindString(2, channel);
+            st.bindString(3, destination);
+            if (!st.execute() || !st.bindResults(2) || !st.fetch()) return false;
+            return st.getInt(0) == 0 && st.getInt(1) < dailyLimit;
         }
 
         bool insert(MYSQL *conn, const std::string &id, int64_t userId,

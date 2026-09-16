@@ -21,7 +21,8 @@ jobs:
             build-essential \
             cmake \
             libjsoncpp-dev \
-            libmysqlclient-dev
+            libmysqlclient-dev \
+            libhiredis-dev
 
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release

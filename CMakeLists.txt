@@ -64,7 +64,8 @@ set(SERVER_SRC
 	backend/Server/src/RedisConnPool.cpp
 	backend/Server/src/RedisStockCache.cpp
 	backend/Server/src/RedisOrderQueue.cpp
-	backend/Server/src/VerificationSender.cpp
+	backend/Server/src/VerificationProvider.cpp
+	backend/Server/src/MockPaymentProvider.cpp
 	${DOMAIN_SRC}
 	backend/SqlConnPool/src/ConnectionPool.cpp
 	backend/ScheduledThreadPool/src/Timer.cpp
@@ -184,3 +185,27 @@ if(HIREDIS_LIB)
     target_link_libraries(test_order_queue PRIVATE ${HIREDIS_LIB})
 endif()
 add_test(NAME test_order_queue COMMAND $<TARGET_FILE:test_order_queue>)
+
+add_executable(test_verification_provider
+    tests/test_verification_provider.cpp
+    backend/Server/src/VerificationProvider.cpp
+    backend/Domain/src/ServiceUtil.cpp
+    ${CHRONOLITE_SRC}
+)
+target_include_directories(test_verification_provider PRIVATE
+    backend/Common/include backend/Domain/include backend/Server/include backend/ChronoLite/include)
+target_link_libraries(test_verification_provider PRIVATE
+    ${JSONCPP_LIB} crypt Threads::Threads OpenSSL::SSL OpenSSL::Crypto)
+add_test(NAME test_verification_provider COMMAND $<TARGET_FILE:test_verification_provider>)
+
+add_executable(test_payment_state_machine tests/test_payment_state_machine.cpp)
+target_include_directories(test_payment_state_machine PRIVATE backend/Domain/include)
+add_test(NAME test_payment_state_machine COMMAND $<TARGET_FILE:test_payment_state_machine>)
+
+add_executable(test_mock_payment_provider
+    tests/test_mock_payment_provider.cpp
+    backend/Server/src/MockPaymentProvider.cpp
+)
+target_include_directories(test_mock_payment_provider PRIVATE
+    backend/Domain/include backend/Server/include)
+add_test(NAME test_mock_payment_provider COMMAND $<TARGET_FILE:test_mock_payment_provider>)

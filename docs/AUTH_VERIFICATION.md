@@ -2,14 +2,31 @@
 
 ## Providers
 
+- Verification delivery and validation use the shared `IVerificationProvider`
+  contract: `sendCode()` dispatches delivery and `verifyCode()` performs the
+  constant-time bcrypt-backed check.
 - Email uses authenticated SMTP over certificate-verified implicit TLS.
 - The sender header is `HyperTicket <configured-address>`.
 - Mock SMS never contacts a carrier. It may return `mock_code` only when both
   `mock_sms_enabled` and `expose_mock_sms_code` are enabled in local config.
+- Development inbox mode writes EMAIL or SMS codes as JSONL to a local file
+  with mode `0600`. It is disabled by default and must never be enabled in
+  production.
 - Production-safe defaults disable Mock SMS and code exposure.
 
 SMTP credentials belong in `.env`, never in Git. POP3, IMAP, Exchange, and
 CardDAV are not used to send verification mail.
+
+For local automated testing, set:
+
+```env
+HYPERTICKET_VERIFICATION_DEV_INBOX_ENABLED=true
+HYPERTICKET_VERIFICATION_DEV_INBOX_PATH=logs/verification-inbox.jsonl
+```
+
+Each line contains `channel`, `destination`, `purpose`, `code`, and
+`created_at_ms`. The inbox path is ignored by Git when the documented default
+is used, and the provider enforces owner-only read/write permissions.
 
 ## Registration flow
 
@@ -90,8 +107,12 @@ Protocol summary:
 - Verification/reset grant lifetime: 10 minutes.
 - Maximum code attempts: 5.
 - Resend cooldown: 60 seconds per destination/purpose/channel.
+- Daily send limit: 10 per destination/purpose/channel by default.
 - Account, IP, device, and destination request limits are shared in MySQL.
 - Passwords must be 8-64 characters and contain uppercase, lowercase, and digit.
+- Send, delivery failure, verification success, wrong-code, expiry, exhausted
+  attempts, wrong ownership, and replay rejection are recorded in
+  `security_audit` without storing the plaintext code.
 
 ## Database migration
 

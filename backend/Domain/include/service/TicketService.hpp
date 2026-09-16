@@ -7,7 +7,8 @@
 #include "../ISessionManager.hpp"
 #include "../IStockCache.hpp"
 #include "../IOrderQueue.hpp"
-#include "../IVerificationSender.hpp"
+#include "../IVerificationProvider.hpp"
+#include "../IPaymentProvider.hpp"
 #include "../repository/UserRepository.hpp"
 #include "../repository/TicketRepository.hpp"
 #include "../repository/ReservationRepository.hpp"
@@ -25,9 +26,9 @@ namespace hyperticket
     public:
         // stock 可为空：为空时使用内置 NoopStockCache（无缓存直连 DB）。
         TicketService(shanchuan::ConnectionPool *pool, ISessionManager *sessions,
-                      IStockCache *stock = nullptr, IVerificationSender *verificationSender = nullptr)
+                      IStockCache *stock = nullptr, IVerificationProvider *verificationProvider = nullptr)
             : pool_(pool), sessions_(sessions),
-              stock_(stock ? stock : &noopStock_), verificationSender_(verificationSender) {}
+              stock_(stock ? stock : &noopStock_), verificationProvider_(verificationProvider) {}
 
         Json::Value handle(const Json::Value &req);
 
@@ -47,6 +48,8 @@ namespace hyperticket
             paySettleDelayMs_ = settleDelayMs;
             paySuccessRatePercent_ = successRatePercent;
         }
+        void configurePaymentProvider(IPaymentProvider *provider)
+        { paymentProvider_ = provider; }
         void configureAuth(int maxFailures, int failureWindowSeconds, int lockSeconds)
         {
             authMaxFailures_ = maxFailures > 0 ? maxFailures : 5;
@@ -55,7 +58,8 @@ namespace hyperticket
         }
         void configureVerification(bool mockSmsEnabled, bool exposeMockSmsCode,
                                    int codeTtlSeconds, int maxAttempts,
-                                   int resendCooldownSeconds, int grantTtlSeconds,
+                                   int resendCooldownSeconds, int dailySendLimit,
+                                   int grantTtlSeconds,
                                    bool requireRegistrationVerification)
         {
             mockSmsEnabled_ = mockSmsEnabled;
@@ -63,6 +67,7 @@ namespace hyperticket
             codeTtlSeconds_ = codeTtlSeconds;
             verificationMaxAttempts_ = maxAttempts;
             resendCooldownSeconds_ = resendCooldownSeconds;
+            verificationDailySendLimit_ = dailySendLimit > 0 ? dailySendLimit : 10;
             grantTtlSeconds_ = grantTtlSeconds;
             requireRegistrationVerification_ = requireRegistrationVerification;
         }
@@ -130,7 +135,8 @@ namespace hyperticket
         FavoriteRepository favRepo_;
         AuthSecurityRepository authRepo_;
         AuthChallengeRepository challengeRepo_;
-        IVerificationSender *verificationSender_ = nullptr;
+        IVerificationProvider *verificationProvider_ = nullptr;
+        IPaymentProvider *paymentProvider_ = nullptr;
 
         // 模拟支付网关参数（可由 configurePayment 覆盖）
         int paySettleDelayMs_ = 1000;      // 发起支付 → 网关结算的延迟
@@ -144,6 +150,7 @@ namespace hyperticket
         int codeTtlSeconds_ = 300;
         int verificationMaxAttempts_ = 5;
         int resendCooldownSeconds_ = 60;
+        int verificationDailySendLimit_ = 10;
         int grantTtlSeconds_ = 600;
         bool requireRegistrationVerification_ = true;
     };

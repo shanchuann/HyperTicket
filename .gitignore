@@ -23,6 +23,7 @@ bin/
 
 *.log
 logs/
+verification-inbox*.jsonl
 
 .vscode/
 .idea/

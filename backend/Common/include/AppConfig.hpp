@@ -80,9 +80,12 @@ namespace hyperticket
         bool smtp_use_tls = true;
         bool mock_sms_enabled = false;
         bool expose_mock_sms_code = false;
+        bool development_inbox_enabled = false;
+        std::string development_inbox_path = "logs/verification-inbox.jsonl";
         int code_ttl_seconds = 300;
         int max_attempts = 5;
         int resend_cooldown_seconds = 60;
+        int daily_send_limit = 10;
         int grant_ttl_seconds = 600;
         bool require_registration_verification = true;
     };

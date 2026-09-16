@@ -1,16 +1,21 @@
-#include "../include/VerificationSender.hpp"
+#include "../include/VerificationProvider.hpp"
 
 #include "../../ChronoLite/include/Logger.hpp"
+#include "../../Domain/include/ServiceUtil.hpp"
 
-#include <openssl/err.h>
+#include <jsoncpp/json/json.h>
 #include <openssl/evp.h>
 #include <openssl/ssl.h>
 
 #include <netdb.h>
+#include <fcntl.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <unistd.h>
 
-#include <cstring>
+#include <chrono>
+#include <filesystem>
+#include <mutex>
 #include <sstream>
 #include <string>
 
@@ -18,6 +23,8 @@ namespace hyperticket
 {
     namespace
     {
+        std::mutex inboxMutex;
+
         std::string base64(const std::string &input)
         {
             std::string output(4 * ((input.size() + 2) / 3), '\0');
@@ -43,8 +50,7 @@ namespace hyperticket
             hints.ai_family = AF_UNSPEC;
             hints.ai_socktype = SOCK_STREAM;
             addrinfo *result = nullptr;
-            const std::string service = std::to_string(port);
-            if (getaddrinfo(host.c_str(), service.c_str(), &hints, &result) != 0)
+            if (getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &result) != 0)
             {
                 errorOut = "smtp_dns_failed";
                 return -1;
@@ -124,10 +130,97 @@ namespace hyperticket
         }
     }
 
-    bool VerificationSender::sendEmailCode(const std::string &destination,
-                                             const std::string &code,
-                                             const std::string &purpose,
-                                             std::string &errorOut)
+    bool VerificationProvider::sendCode(const std::string &channel,
+                                        const std::string &destination,
+                                        const std::string &code,
+                                        const std::string &purpose,
+                                        std::string &errorOut)
+    {
+        if (config_.development_inbox_enabled)
+            return writeDevelopmentInbox(channel, destination, code, purpose, errorOut);
+        if (channel == "EMAIL")
+            return sendEmailCode(destination, code, purpose, errorOut);
+        if (channel == "SMS")
+            return sendMockSmsCode(destination, errorOut);
+        errorOut = "unsupported_verification_channel";
+        return false;
+    }
+
+    bool VerificationProvider::verifyCode(const std::string &code,
+                                          const std::string &storedHash) const
+    {
+        bool needRehash = false;
+        return verifyPassword(code, storedHash, needRehash);
+    }
+
+    bool VerificationProvider::writeDevelopmentInbox(
+        const std::string &channel, const std::string &destination,
+        const std::string &code, const std::string &purpose,
+        std::string &errorOut) const
+    {
+        if ((channel != "EMAIL" && channel != "SMS") || destination.empty() ||
+            code.size() != 6 || config_.development_inbox_path.empty())
+        {
+            errorOut = "invalid_development_delivery";
+            return false;
+        }
+
+        std::lock_guard<std::mutex> lock(inboxMutex);
+        const std::filesystem::path path(config_.development_inbox_path);
+        std::error_code ec;
+        if (path.has_parent_path())
+            std::filesystem::create_directories(path.parent_path(), ec);
+        if (ec)
+        {
+            errorOut = "development_inbox_directory_failed";
+            return false;
+        }
+
+        Json::Value record;
+        record["channel"] = channel;
+        record["destination"] = destination;
+        record["purpose"] = purpose;
+        record["code"] = code;
+        record["created_at_ms"] = static_cast<Json::Int64>(
+            std::chrono::duration_cast<std::chrono::milliseconds>(
+                std::chrono::system_clock::now().time_since_epoch()).count());
+        Json::StreamWriterBuilder builder;
+        builder["indentation"] = "";
+
+        const int fd = open(path.c_str(), O_WRONLY | O_CREAT | O_APPEND | O_CLOEXEC,
+                            S_IRUSR | S_IWUSR);
+        if (fd < 0)
+        {
+            errorOut = "development_inbox_open_failed";
+            return false;
+        }
+        if (fchmod(fd, S_IRUSR | S_IWUSR) != 0)
+        {
+            close(fd);
+            errorOut = "development_inbox_permissions_failed";
+            return false;
+        }
+        const std::string line = Json::writeString(builder, record) + "\n";
+        size_t written = 0;
+        while (written < line.size())
+        {
+            const ssize_t count = write(fd, line.data() + written, line.size() - written);
+            if (count <= 0)
+            {
+                close(fd);
+                errorOut = "development_inbox_write_failed";
+                return false;
+            }
+            written += static_cast<size_t>(count);
+        }
+        close(fd);
+        return true;
+    }
+
+    bool VerificationProvider::sendEmailCode(const std::string &destination,
+                                              const std::string &code,
+                                              const std::string &purpose,
+                                              std::string &errorOut) const
     {
         if (!config_.email_enabled || !config_.smtp_use_tls)
         {
@@ -200,10 +293,8 @@ namespace hyperticket
         return ok;
     }
 
-    bool VerificationSender::sendMockSmsCode(const std::string &destination,
-                                               const std::string &,
-                                               const std::string &,
-                                               std::string &errorOut)
+    bool VerificationProvider::sendMockSmsCode(const std::string &destination,
+                                                std::string &errorOut) const
     {
         if (!config_.mock_sms_enabled)
         {

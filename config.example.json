@@ -49,9 +49,12 @@
   "verification": {
     "mock_sms_enabled": false,
     "expose_mock_sms_code": false,
+    "development_inbox_enabled": false,
+    "development_inbox_path": "logs/verification-inbox.jsonl",
     "code_ttl_seconds": 300,
     "max_attempts": 5,
     "resend_cooldown_seconds": 60,
+    "daily_send_limit": 10,
     "grant_ttl_seconds": 600,
     "require_registration_verification": true
   },

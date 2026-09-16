@@ -9,6 +9,16 @@ on:
 jobs:
   build-and-test:
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
 
     steps:
       - name: Checkout
@@ -22,7 +32,11 @@ jobs:
             cmake \
             libjsoncpp-dev \
             libmysqlclient-dev \
-            libhiredis-dev
+            libhiredis-dev \
+            redis-tools
+
+      - name: Verify Redis service
+        run: redis-cli -h 127.0.0.1 -p 6379 ping | grep -Fx PONG
 
       - name: Configure
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release

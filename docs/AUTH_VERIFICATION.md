@@ -45,6 +45,45 @@ development-only `mock_code` from step 1.
 Successful reset consumes the token, updates the bcrypt hash, writes a security
 audit event, and revokes every Redis session belonging to that user.
 
+## Existing-account contact verification
+
+Existing users can bind a verified recovery destination after login. These
+endpoints require a valid user session; requesting a code also requires the
+current password.
+
+1. Read the current security status:
+
+```json
+{"type":31,"token":"..."}
+```
+
+2. Request an email binding code:
+
+```json
+{"type":32,"token":"...","passward":"CurrentPassword1","channel":"EMAIL","email":"user@example.com","client_id":"installation-id"}
+```
+
+For local Mock SMS, use `channel: "SMS"` and omit `email`. SMS verifies the
+account's current login phone number; changing the primary login phone number is
+intentionally not supported by this flow.
+
+3. Confirm and bind the contact:
+
+```json
+{"type":33,"token":"...","challenge_id":"...","code":"123456"}
+```
+
+After confirmation, type 31 and subsequent login responses expose
+`email_verified` and `phone_verified`. A verified destination can immediately
+be used by the type 28-30 password-reset flow. Email addresses remain globally
+unique, and a challenge belongs to the user session that requested it.
+
+Protocol summary:
+
+- `31 ACCOUNT_SECURITY_STATUS`
+- `32 CONTACT_VERIFICATION_REQUEST`
+- `33 CONTACT_VERIFICATION_CONFIRM`
+
 ## Security limits
 
 - Code lifetime: 5 minutes.

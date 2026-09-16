@@ -91,6 +91,9 @@ namespace hyperticket
         Json::Value requestPasswordReset(const Json::Value &req);
         Json::Value verifyPasswordReset(const Json::Value &req);
         Json::Value confirmPasswordReset(const Json::Value &req);
+        Json::Value accountSecurityStatus(const Json::Value &req);
+        Json::Value requestContactVerification(const Json::Value &req);
+        Json::Value confirmContactVerification(const Json::Value &req);
         bool consumeGrant(MYSQL *conn, const std::string &token,
                           const std::string &purpose, AuthChallenge &challengeOut);
 

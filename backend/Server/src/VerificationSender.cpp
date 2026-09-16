@@ -175,7 +175,8 @@ namespace hyperticket
         if (ok)
         {
             const std::string action = purpose == "PASSWORD_RESET"
-                ? "reset your password" : "verify your account";
+                ? "reset your password"
+                : (purpose == "CONTACT" ? "verify your contact information" : "verify your account");
             std::ostringstream message;
             message << "From: " << config_.smtp_from_name << " <" << from << ">\r\n"
                     << "To: <" << destination << ">\r\n"

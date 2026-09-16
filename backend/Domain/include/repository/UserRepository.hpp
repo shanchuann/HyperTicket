@@ -18,16 +18,22 @@ namespace hyperticket
         // 按手机号查询单个用户；未找到返回 false。
         bool findByTel(MYSQL *conn, const std::string &tel, User &out)
         {
-            MysqlStmt st(conn, "SELECT id, username, password_hash, status FROM users WHERE tel = ?");
+            MysqlStmt st(conn,
+                "SELECT id,username,password_hash,status,IFNULL(email,''),"
+                "email_verified_at IS NOT NULL,phone_verified_at IS NOT NULL "
+                "FROM users WHERE tel=?");
             if (!st.ok()) return false;
             st.bindString(0, tel);
-            if (!st.execute() || !st.bindResults(4)) return false;
+            if (!st.execute() || !st.bindResults(7)) return false;
             if (!st.fetch()) return false;
             out.id = st.getInt(0);
             out.tel = tel;
             out.username = st.getString(1);
             out.passwordHash = st.getString(2);
             out.status = static_cast<int>(st.getInt(3));
+            out.email = st.getString(4);
+            out.emailVerified = st.getInt(5) != 0;
+            out.phoneVerified = st.getInt(6) != 0;
             return true;
         }
 
@@ -148,6 +154,26 @@ namespace hyperticket
             if (!st.ok()) return false;
             st.bindString(0, tel);
             return st.execute();
+        }
+
+        bool bindVerifiedEmail(MYSQL *conn, int64_t userId, const std::string &email)
+        {
+            MysqlStmt st(conn,
+                "UPDATE users SET email=?,email_verified_at=NOW(3) WHERE id=?");
+            if (!st.ok()) return false;
+            st.bindString(0, email);
+            st.bindInt(1, userId);
+            return st.execute() && mysql_affected_rows(conn) == 1;
+        }
+
+        bool markPhoneVerified(MYSQL *conn, int64_t userId, const std::string &tel)
+        {
+            MysqlStmt st(conn,
+                "UPDATE users SET phone_verified_at=NOW(3) WHERE id=? AND tel=?");
+            if (!st.ok()) return false;
+            st.bindInt(0, userId);
+            st.bindString(1, tel);
+            return st.execute() && mysql_affected_rows(conn) == 1;
         }
 
     private:

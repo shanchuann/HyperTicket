@@ -47,6 +47,9 @@ namespace hyperticket
         PASSWORD_RESET_REQUEST = 28,
         PASSWORD_RESET_VERIFY  = 29,
         PASSWORD_RESET_CONFIRM = 30,
+        ACCOUNT_SECURITY_STATUS = 31,
+        CONTACT_VERIFICATION_REQUEST = 32,
+        CONTACT_VERIFICATION_CONFIRM = 33,
     };
 
     // 协议字段名常量，避免魔法字符串散落各处。

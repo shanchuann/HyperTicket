@@ -41,6 +41,9 @@ static void test_enum_values()
     CHECK_EQ((int)PASSWORD_RESET_REQUEST, 28);
     CHECK_EQ((int)PASSWORD_RESET_VERIFY, 29);
     CHECK_EQ((int)PASSWORD_RESET_CONFIRM, 30);
+    CHECK_EQ((int)ACCOUNT_SECURITY_STATUS, 31);
+    CHECK_EQ((int)CONTACT_VERIFICATION_REQUEST, 32);
+    CHECK_EQ((int)CONTACT_VERIFICATION_CONFIRM, 33);
 }
 
 static void test_json_line_roundtrip()

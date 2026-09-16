@@ -42,6 +42,9 @@ namespace hyperticket
         case PASSWORD_RESET_REQUEST:return requestPasswordReset(req);
         case PASSWORD_RESET_VERIFY: return verifyPasswordReset(req);
         case PASSWORD_RESET_CONFIRM:return confirmPasswordReset(req);
+        case ACCOUNT_SECURITY_STATUS:return accountSecurityStatus(req);
+        case CONTACT_VERIFICATION_REQUEST:return requestContactVerification(req);
+        case CONTACT_VERIFICATION_CONFIRM:return confirmContactVerification(req);
         case FAVORITE:              return favorite(req);
         case VIEW_FAVORITES:        return viewFavorites(req);
         case HOT_TICKETS:           return hotTickets(req);
@@ -119,6 +122,9 @@ namespace hyperticket
         if (!device.empty()) authRepo_.clear(conn, "device", device);
         authRepo_.audit(conn, "user", tel, "LOGIN_SUCCESS", ip, "");
         res[field::kToken] = token;
+        res[field::kEmail] = u.email;
+        res["email_verified"] = u.emailVerified;
+        res["phone_verified"] = u.phoneVerified;
         return res;
     }
 

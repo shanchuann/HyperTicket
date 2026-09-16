@@ -30,12 +30,15 @@ def require_ok(response, context):
     return response
 
 
-def create_order(client, token, ticket_id, suffix):
+def create_order(client, token, ticket_id, suffix, seat_id=None):
     request_id = f"phase4-order-{suffix}-{time.time_ns()}"
-    require_ok(client.call({
+    payload = {
         "type": 5, "token": token, "index": ticket_id,
         "quantity": 1, "request_id": request_id,
-    }), "enqueue order")
+    }
+    if seat_id:
+        payload["seat_id"] = seat_id
+    require_ok(client.call(payload), "enqueue order")
     deadline = time.time() + 15
     while time.time() < deadline:
         response = require_ok(client.call({
@@ -69,6 +72,9 @@ def main():
     parser.add_argument("--tel", required=True)
     parser.add_argument("--password", required=True)
     parser.add_argument("--ticket", type=int, required=True)
+    parser.add_argument("--provider", default="MOCK", choices=("MOCK", "ALIPAY", "WECHAT"))
+    parser.add_argument("--seat-mode", action="store_true")
+    parser.add_argument("--expect-alipay-unavailable", action="store_true")
     args = parser.parse_args()
 
     client = Client(args.host, args.port)
@@ -81,39 +87,49 @@ def main():
             "client_id": "phase4-e2e",
         }), "login")
         token = login["token"]
-        first_reservation = create_order(client, token, args.ticket, "a")
+        seat_id = None
+        if args.seat_mode:
+            seats = require_ok(client.call({
+                "type": 17, "token": token, "index": args.ticket,
+            }), "list seats")
+            available = [row for row in seats.get("arr", []) if row.get("status") == "AVAILABLE"]
+            if not available:
+                raise AssertionError("no available seat for seat-mode test")
+            seat_id = available[0]["id"]
+        first_reservation = create_order(client, token, args.ticket, "a", seat_id)
         reservations.append(first_reservation)
         second_reservation = create_order(client, token, args.ticket, "b")
         reservations.append(second_reservation)
         key = f"phase4-pay-{first_reservation}"
 
-        unavailable = client.call({
-            "type": 20, "token": token, "index": first_reservation,
-            "provider": "ALIPAY", "idempotency_key": key,
-        })
-        assert unavailable.get("reason") == "PAYMENT_PROVIDER_UNAVAILABLE", unavailable
+        if args.expect_alipay_unavailable:
+            unavailable = client.call({
+                "type": 20, "token": token, "index": first_reservation,
+                "provider": "ALIPAY", "idempotency_key": key,
+            })
+            assert unavailable.get("reason") == "PAYMENT_PROVIDER_UNAVAILABLE", unavailable
 
         created = require_ok(client.call({
             "type": 20, "token": token, "index": first_reservation,
-            "provider": "MOCK", "idempotency_key": key,
+            "provider": args.provider, "idempotency_key": key,
         }), "create payment")
         assert created["currency"] == "CNY" and created["amount_minor"] > 0, created
 
         duplicate = require_ok(client.call({
             "type": 20, "token": token, "index": first_reservation,
-            "provider": "MOCK", "idempotency_key": key,
+            "provider": args.provider, "idempotency_key": key,
         }), "repeat payment")
         assert duplicate["payment_no"] == created["payment_no"], duplicate
 
         parallel_key = client.call({
             "type": 20, "token": token, "index": first_reservation,
-            "provider": "MOCK", "idempotency_key": key + "-different",
+            "provider": args.provider, "idempotency_key": key + "-different",
         })
         assert parallel_key.get("reason") == "PAYMENT_IN_PROGRESS", parallel_key
 
         conflict = client.call({
             "type": 20, "token": token, "index": second_reservation,
-            "provider": "MOCK", "idempotency_key": key,
+            "provider": args.provider, "idempotency_key": key,
         })
         assert conflict.get("reason") == "PAYMENT_IDEMPOTENCY_CONFLICT", conflict
 
@@ -125,6 +141,23 @@ def main():
         }), "cancel paid order")
         refunded = wait_payment(client, token, first_reservation, "REFUNDED")
         assert refunded["order_status"] == "CANCELLED", refunded
+
+        if seat_id:
+            seats_after = require_ok(client.call({
+                "type": 17, "token": token, "index": args.ticket,
+            }), "list seats after cancellation")
+            released = [row for row in seats_after.get("arr", [])
+                        if row.get("id") == seat_id and row.get("status") == "AVAILABLE"]
+            assert released, seats_after
+
+        require_ok(client.call({
+            "type": 16, "token": token, "index": first_reservation,
+        }), "hide refunded order")
+        orders = require_ok(client.call({
+            "type": 6, "token": token,
+        }), "list orders after hide")
+        visible_ids = {str(row.get("reservation_id")) for row in orders.get("arr", [])}
+        assert str(first_reservation) not in visible_ids, orders
 
         require_ok(client.call({
             "type": 7, "token": token, "index": second_reservation,

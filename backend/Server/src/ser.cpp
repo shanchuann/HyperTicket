@@ -13,6 +13,7 @@
 #include "../include/SchemaInitializer.hpp"
 #include "../include/VerificationProvider.hpp"
 #include "../include/MockPaymentProvider.hpp"
+#include "../include/SimulatedPaymentProvider.hpp"
 #include "../../Domain/include/service/TicketService.hpp"
 #include "../../Domain/include/ServiceUtil.hpp"
 #include "../../SqlConnPool/include/ConnectionPool.hpp"
@@ -144,6 +145,22 @@ int main()
     hyperticket::MockPaymentProvider mockPaymentProvider(cfg.payment.success_rate_percent);
     hyperticket::TicketService service(pool, sessionMgr.get(), stockCache.get(), &verificationProvider);
     service.configurePaymentProvider(&mockPaymentProvider);
+    std::unique_ptr<hyperticket::SimulatedPaymentProvider> simulatedAlipay;
+    std::unique_ptr<hyperticket::SimulatedPaymentProvider> simulatedWechat;
+    if (cfg.payment.simulated_channels_enabled)
+    {
+        simulatedAlipay = std::make_unique<hyperticket::SimulatedPaymentProvider>(
+            "ALIPAY", cfg.payment.success_rate_percent,
+            cfg.payment.simulated_webhook_secret);
+        simulatedWechat = std::make_unique<hyperticket::SimulatedPaymentProvider>(
+            "WECHAT", cfg.payment.success_rate_percent,
+            cfg.payment.simulated_webhook_secret);
+        service.configurePaymentProvider(simulatedAlipay.get());
+        service.configurePaymentProvider(simulatedWechat.get());
+        LOG_WARN << "ALIPAY/WECHAT simulated payment channels enabled; no external gateway is used";
+        if (cfg.payment.simulated_webhook_secret.empty())
+            LOG_WARN << "simulated payment webhook verification disabled: secret is empty";
+    }
     service.configureAuth(cfg.auth.max_failures, cfg.auth.failure_window_seconds,
                           cfg.auth.lock_seconds);
     service.configureVerification(

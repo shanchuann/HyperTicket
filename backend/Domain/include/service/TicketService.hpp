@@ -2,6 +2,8 @@
 #define HYPERTICKET_TICKET_SERVICE_HPP
 
 #include <jsoncpp/json/json.h>
+#include <string>
+#include <unordered_map>
 
 #include "../../../SqlConnPool/include/ConnectionPool.hpp"
 #include "../ISessionManager.hpp"
@@ -49,7 +51,9 @@ namespace hyperticket
             paySuccessRatePercent_ = successRatePercent;
         }
         void configurePaymentProvider(IPaymentProvider *provider)
-        { paymentProvider_ = provider; }
+        {
+            if (provider) paymentProviders_[provider->name()] = provider;
+        }
         void configureAuth(int maxFailures, int failureWindowSeconds, int lockSeconds)
         {
             authMaxFailures_ = maxFailures > 0 ? maxFailures : 5;
@@ -136,7 +140,7 @@ namespace hyperticket
         AuthSecurityRepository authRepo_;
         AuthChallengeRepository challengeRepo_;
         IVerificationProvider *verificationProvider_ = nullptr;
-        IPaymentProvider *paymentProvider_ = nullptr;
+        std::unordered_map<std::string, IPaymentProvider *> paymentProviders_;
 
         // 模拟支付网关参数（可由 configurePayment 覆盖）
         int paySettleDelayMs_ = 1000;      // 发起支付 → 网关结算的延迟

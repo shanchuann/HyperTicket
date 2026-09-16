@@ -353,7 +353,7 @@ npm start     # 监听 ws://localhost:8080
 | 17 | VIEW_SEATS | 查看票务座位图 | |
 | 18 | VERIFY_ORDER | 按订单号验票（扫码核销） | |
 | 19 | TICKET_DETAIL | 票品详情（简介 / 购票须知 / 艺人 / 城市） | |
-| 20 | PAY_ORDER | 发起支付：以 `idempotency_key` 创建支付请求；当前仅支持 `provider=MOCK` | ✓ |
+| 20 | PAY_ORDER | 发起支付：以 `idempotency_key` 创建支付请求；支持 MOCK 和可选开发占位渠道 | ✓ |
 | 21 | FAVORITE | 收藏 / 取消收藏（`action`: add \| remove） | ✓ |
 | 22 | VIEW_FAVORITES | 我的收藏（想看）列表 | ✓ |
 | 23 | HOT_TICKETS | 热门榜（按有效订单量 TOP N，`limit` 默认 10） | |
@@ -386,6 +386,10 @@ ORDER(5) → PENDING（锁库存，expire_at = +15min）
 
 > 支付流水的所有状态迁移都是 `WHERE status='PROCESSING'` 的条件 UPDATE，重复结算天然幂等；
 > 发起支付/取消/超时回收/结算确认都先锁定 reservation 行，同一订单上的竞争操作被串行化，杜绝超卖与重复扣款。
+
+`ALIPAY`、`WECHAT` 当前是默认关闭的开发占位 Provider，不连接任何外部支付平台，
+不能代表真实收款。启用方式和后续替换边界见
+[支付 Provider 指南](docs/PAYMENT_PROVIDERS.md)。
 > 模拟网关参数见 `config.json` 的 `payment` 段（`settle_delay_ms` / `settle_interval_ms` / `success_rate_percent`）。
 
 ### 响应格式

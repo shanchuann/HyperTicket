@@ -88,7 +88,7 @@ protection, and audit records are enforced independently of the delivery mode.
 | 5 | ORDER | 下单预订 | 需要 |
 | 6 | VIEW_MY | 查看本人订单 | 需要 |
 | 7 | CANCEL | 取消预订 | 需要 |
-| 20 | PAY_ORDER | 创建支付请求（`provider=MOCK` + 客户端幂等键） | 需要 |
+| 20 | PAY_ORDER | 创建支付请求（Provider + 客户端幂等键） | 需要 |
 | 24 | PAY_QUERY | 查询支付与退款状态 | 需要 |
 | 25 | ORDER_QUERY | 查询异步下单状态 | 需要 |
 
@@ -98,7 +98,9 @@ protection, and audit records are enforced independently of the delivery mode.
 
 支付金额使用 `amount_minor`（CNY 分）。支付请求由客户端提供 8-64 位
 `idempotency_key`；同一用户重复使用相同键会返回原支付单，参数冲突会被拒绝。
-`ALIPAY` 和 `WECHAT` 在 Provider 接入前返回 `PAYMENT_PROVIDER_UNAVAILABLE`。
+默认只注册 `MOCK`。开发环境可以显式启用 `ALIPAY`、`WECHAT` 模拟占位
+Provider；它们不发起任何外部网络请求，生产环境必须保持关闭。详见
+[支付 Provider 指南](../../docs/PAYMENT_PROVIDERS.md)。
 
 **请求字段**: type, usertel, password, username, token, index 等
 

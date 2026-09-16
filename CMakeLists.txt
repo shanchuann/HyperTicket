@@ -66,6 +66,7 @@ set(SERVER_SRC
 	backend/Server/src/RedisOrderQueue.cpp
 	backend/Server/src/VerificationProvider.cpp
 	backend/Server/src/MockPaymentProvider.cpp
+	backend/Server/src/SimulatedPaymentProvider.cpp
 	${DOMAIN_SRC}
 	backend/SqlConnPool/src/ConnectionPool.cpp
 	backend/ScheduledThreadPool/src/Timer.cpp
@@ -209,3 +210,12 @@ add_executable(test_mock_payment_provider
 target_include_directories(test_mock_payment_provider PRIVATE
     backend/Domain/include backend/Server/include)
 add_test(NAME test_mock_payment_provider COMMAND $<TARGET_FILE:test_mock_payment_provider>)
+
+add_executable(test_simulated_payment_provider
+    tests/test_simulated_payment_provider.cpp
+    backend/Server/src/SimulatedPaymentProvider.cpp
+)
+target_include_directories(test_simulated_payment_provider PRIVATE
+    backend/Domain/include backend/Server/include)
+target_link_libraries(test_simulated_payment_provider PRIVATE OpenSSL::Crypto)
+add_test(NAME test_simulated_payment_provider COMMAND $<TARGET_FILE:test_simulated_payment_provider>)

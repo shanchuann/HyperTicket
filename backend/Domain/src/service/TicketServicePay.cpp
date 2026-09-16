@@ -1,6 +1,7 @@
 #include "../../include/service/TicketService.hpp"
 
 #include <cctype>
+#include <exception>
 
 #include "../../../Common/include/Protocol.hpp"
 #include "../../../Common/include/Errors.hpp"
@@ -76,13 +77,10 @@ namespace hyperticket
         const std::string idempotencyKey = req.get(field::kIdempotencyKey, "").asString();
         if (reservationId <= 0 || !isValidIdempotencyKey(idempotencyKey))
             return makeError(err::kInvalidInput);
-        if (provider != "MOCK")
-        {
-            if (provider == "ALIPAY" || provider == "WECHAT")
-                return makeError(err::kPaymentProviderUnavailable);
+        if (provider != "MOCK" && provider != "ALIPAY" && provider != "WECHAT")
             return makeError(err::kInvalidInput);
-        }
-        if (!paymentProvider_ || paymentProvider_->name() != provider)
+        const auto providerIt = paymentProviders_.find(provider);
+        if (providerIt == paymentProviders_.end())
             return makeError(err::kPaymentProviderUnavailable);
 
         MYSQL *conn = nullptr;
@@ -175,7 +173,7 @@ namespace hyperticket
 
     bool TicketService::settleDuePayments()
     {
-        if (!paymentProvider_) return false;
+        if (paymentProviders_.empty()) return false;
 
         MYSQL *conn = nullptr;
         shanchuan::ConnectionGuard raii(&conn, pool_);
@@ -197,11 +195,14 @@ namespace hyperticket
             if (!payRepo_.lockById(conn, candidate.id, payment) ||
                 (payment.status != "CREATED" && payment.status != "PROCESSING"))
                 continue;
-            if (payment.provider != paymentProvider_->name())
+            const auto providerIt = paymentProviders_.find(payment.provider);
+            if (providerIt == paymentProviders_.end())
             {
-                txn.rollback();
-                return false;
+                LOG_ERROR << "payment provider unavailable: " << payment.provider
+                          << " payment=" << payment.paymentNo;
+                continue;
             }
+            IPaymentProvider *paymentProvider = providerIt->second;
 
             const std::string &orderStatus = lockedReservation.status;
             if (payment.status == "CREATED")
@@ -218,7 +219,7 @@ namespace hyperticket
                     continue;
                 }
 
-                const PaymentProviderResult result = paymentProvider_->createPayment(providerRequest(payment));
+                const PaymentProviderResult result = paymentProvider->createPayment(providerRequest(payment));
                 const std::string next = result.accepted ? providerStateName(result.state) : "FAILED";
                 if (!canTransitionPayment("CREATED", next) ||
                     !payRepo_.transition(conn, payment.id, "CREATED", next,
@@ -235,9 +236,9 @@ namespace hyperticket
 
             PaymentProviderResult result;
             if (orderStatus != "PENDING")
-                result = paymentProvider_->closePayment(providerRequest(payment));
+                result = paymentProvider->closePayment(providerRequest(payment));
             else
-                result = paymentProvider_->queryPayment(providerRequest(payment));
+                result = paymentProvider->queryPayment(providerRequest(payment));
 
             std::string next = result.accepted ? providerStateName(result.state) : "FAILED";
             if (next == "PROCESSING")
@@ -285,22 +286,49 @@ namespace hyperticket
         const std::vector<Refund> dueRefunds = payRepo_.lockDueRefunds(conn, 200);
         for (const Refund &refund : dueRefunds)
         {
+            const auto providerIt = paymentProviders_.find(refund.provider);
+            if (providerIt == paymentProviders_.end())
+            {
+                LOG_ERROR << "refund provider unavailable: " << refund.provider
+                          << " refund=" << refund.refundNo;
+                continue;
+            }
             RefundProviderRequest request;
             request.refundNo = refund.refundNo;
             request.paymentNo = refund.paymentNo;
             request.providerTransactionId = refund.paymentProviderTransactionId;
             request.amountMinor = refund.amountMinor;
             request.currency = refund.currency;
-            const PaymentProviderResult result = paymentProvider_->refundPayment(request);
-            const std::string refundStatus = result.accepted && result.state == ProviderPaymentState::Succeeded
-                ? "SUCCEEDED" : "FAILED";
-            if (!payRepo_.transitionRefund(conn, refund.id, refund.status, refundStatus,
-                                           result.providerTransactionId, result.reason))
+            PaymentProviderResult result;
+            try
+            {
+                result = providerIt->second->refundPayment(request);
+            }
+            catch (const std::exception &error)
+            {
+                result.accepted = false;
+                result.reason = std::string("provider_exception:") + error.what();
+            }
+            catch (...)
+            {
+                result.accepted = false;
+                result.reason = "provider_exception:unknown";
+            }
+            const bool refundSucceeded = result.accepted &&
+                result.state == ProviderPaymentState::Succeeded;
+            const int retryDelaySeconds = 1 << (refund.attemptCount < 8 ? refund.attemptCount : 8);
+            const bool updated = refundSucceeded
+                ? payRepo_.completeRefund(conn, refund.id, refund.status,
+                                          result.providerTransactionId)
+                : payRepo_.retryRefund(conn, refund,
+                    result.reason.empty() ? "provider_refund_failed" : result.reason,
+                    retryDelaySeconds);
+            if (!updated)
             {
                 txn.rollback();
                 return false;
             }
-            if (refundStatus == "SUCCEEDED")
+            if (refundSucceeded)
             {
                 if (!payRepo_.transition(conn, refund.paymentId, "REFUNDING", "REFUNDED", "") ||
                     !payRepo_.appendEvent(conn, refund.paymentId, "REFUNDING", "REFUNDED", "PROVIDER", refund.refundNo))

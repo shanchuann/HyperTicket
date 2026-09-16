@@ -167,13 +167,14 @@ namespace hyperticket
             std::vector<Refund> out;
             MysqlStmt st(conn,
                 "SELECT r.id,r.payment_id,r.refund_no,r.amount_minor,r.currency,r.status,"
-                "p.payment_no,COALESCE(p.provider_transaction_id,'') "
+                "p.payment_no,p.provider,COALESCE(p.provider_transaction_id,''),"
+                "r.attempt_count,r.max_attempts "
                 "FROM refunds r JOIN payments p ON p.id=r.payment_id "
                 "WHERE r.status IN ('CREATED','PROCESSING') AND r.next_action_at<=NOW(3) "
                 "ORDER BY r.next_action_at,r.id LIMIT ? FOR UPDATE");
             if (!st.ok()) return out;
             st.bindInt(0, limit);
-            if (!st.execute() || !st.bindResults(8)) return out;
+            if (!st.execute() || !st.bindResults(11)) return out;
             while (st.fetch())
             {
                 Refund refund;
@@ -184,26 +185,42 @@ namespace hyperticket
                 refund.currency = st.getString(4);
                 refund.status = st.getString(5);
                 refund.paymentNo = st.getString(6);
-                refund.paymentProviderTransactionId = st.getString(7);
+                refund.provider = st.getString(7);
+                refund.paymentProviderTransactionId = st.getString(8);
+                refund.attemptCount = static_cast<int>(st.getInt(9));
+                refund.maxAttempts = static_cast<int>(st.getInt(10));
                 out.push_back(refund);
             }
             return out;
         }
 
-        bool transitionRefund(MYSQL *conn, int64_t refundId, const std::string &expected,
-                              const std::string &next, const std::string &providerRefundId,
-                              const std::string &failureReason = "")
+        bool completeRefund(MYSQL *conn, int64_t refundId, const std::string &expected,
+                            const std::string &providerRefundId)
         {
             MysqlStmt st(conn,
-                "UPDATE refunds SET status=?,provider_refund_id=CASE WHEN ?='' THEN provider_refund_id ELSE ? END,"
-                "failure_reason=?,next_action_at=NOW(3),updated_at=NOW(3) WHERE id=? AND status=?");
+                "UPDATE refunds SET status='SUCCEEDED',provider_refund_id=?,failure_reason='',"
+                "attempt_count=attempt_count+1,next_action_at=NOW(3),updated_at=NOW(3) "
+                "WHERE id=? AND status=?");
             if (!st.ok()) return false;
-            st.bindString(0, next);
-            st.bindString(1, providerRefundId);
-            st.bindString(2, providerRefundId);
-            st.bindString(3, failureReason);
-            st.bindInt(4, refundId);
-            st.bindString(5, expected);
+            st.bindString(0, providerRefundId);
+            st.bindInt(1, refundId);
+            st.bindString(2, expected);
+            return st.execute() && st.affectedRows() > 0;
+        }
+
+        bool retryRefund(MYSQL *conn, const Refund &refund, const std::string &failureReason,
+                         int delaySeconds)
+        {
+            MysqlStmt st(conn,
+                "UPDATE refunds SET status=IF(attempt_count+1>=max_attempts,'FAILED','PROCESSING'),"
+                "failure_reason=?,attempt_count=attempt_count+1,"
+                "next_action_at=DATE_ADD(NOW(3),INTERVAL ? SECOND),updated_at=NOW(3) "
+                "WHERE id=? AND status=?");
+            if (!st.ok()) return false;
+            st.bindString(0, failureReason);
+            st.bindInt(1, delaySeconds);
+            st.bindInt(2, refund.id);
+            st.bindString(3, refund.status);
             return st.execute() && st.affectedRows() > 0;
         }
 

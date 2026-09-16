@@ -144,7 +144,7 @@ namespace hyperticket
                 "JOIN users u ON r.user_id = u.id "
                 "JOIN tickets t ON r.ticket_id = t.id "
                 "LEFT JOIN seats s ON s.reservation_id = r.id "
-                "WHERE u.tel = ? ORDER BY r.id DESC");
+                "WHERE u.tel = ? AND r.deleted_at IS NULL ORDER BY r.id DESC");
             if (!st.ok()) return out;
             st.bindString(0, tel);
             if (!st.execute() || !st.bindResults(15)) return out;
@@ -209,11 +209,12 @@ namespace hyperticket
             return true;
         }
 
-        // 删除已取消或已过期的预定（仅限本人）。
+        // 用户侧删除只隐藏订单，保留支付、退款和审计链。
         bool deleteOwned(MYSQL *conn, int64_t reservationId, int64_t userId)
         {
             MysqlStmt st(conn,
-                "DELETE FROM reservations WHERE id = ? AND user_id = ? "
+                "UPDATE reservations SET deleted_at=NOW(3),updated_at=NOW(3) "
+                "WHERE id=? AND user_id=? AND deleted_at IS NULL "
                 "AND status IN ('CANCELLED','EXPIRED')");
             if (!st.ok()) return false;
             st.bindInt(0, reservationId);

@@ -104,6 +104,12 @@ namespace hyperticket
             cfg.verification.development_inbox_path = envOverride(
                 dotenv, "HYPERTICKET_VERIFICATION_DEV_INBOX_PATH",
                 cfg.verification.development_inbox_path);
+            cfg.payment.simulated_channels_enabled = envOverrideBool(
+                dotenv, "HYPERTICKET_PAYMENT_SIMULATED_CHANNELS_ENABLED",
+                cfg.payment.simulated_channels_enabled);
+            cfg.payment.simulated_webhook_secret = envOverride(
+                dotenv, "HYPERTICKET_PAYMENT_SIMULATED_WEBHOOK_SECRET",
+                cfg.payment.simulated_webhook_secret);
             cfg.verification.email_enabled = !cfg.verification.smtp_host.empty() &&
                                              !cfg.verification.smtp_username.empty() &&
                                              !cfg.verification.smtp_auth_code.empty();
@@ -193,6 +199,8 @@ namespace hyperticket
             cfg.payment.settle_delay_ms = getInt(payment, "settle_delay_ms", cfg.payment.settle_delay_ms);
             cfg.payment.settle_interval_ms = getInt(payment, "settle_interval_ms", cfg.payment.settle_interval_ms);
             cfg.payment.success_rate_percent = getInt(payment, "success_rate_percent", cfg.payment.success_rate_percent);
+            cfg.payment.simulated_channels_enabled = payment.get(
+                "simulated_channels_enabled", cfg.payment.simulated_channels_enabled).asBool();
         }
 
         if (root.isMember("auth"))

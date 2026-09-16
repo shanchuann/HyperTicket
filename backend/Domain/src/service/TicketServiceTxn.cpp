@@ -282,6 +282,11 @@ namespace hyperticket
             txn.rollback();
             return makeError(err::kDbUpdate);
         }
+        if (!seatRepo_.releaseByReservation(conn, r.id))
+        {
+            txn.rollback();
+            return makeError(err::kDbUpdate);
+        }
         resvRepo_.insertAudit(conn, r.id, "CANCEL", "user:" + tel);
 
         // 已支付订单取消只创建退款请求；退款结果由受信任 Provider 在定时任务中确认。
@@ -326,9 +331,18 @@ namespace hyperticket
         shanchuan::ConnectionGuard raii(&conn, pool_);
         if (!conn) return makeError(err::kDbUnavailable);
 
+        Txn txn(conn);
+        if (!txn.ok()) return makeError(err::kDbBegin);
         if (!resvRepo_.deleteOwned(conn, index, userId))
+        {
+            txn.rollback();
             return makeError(err::kOrderNotFound);
-
+        }
+        if (!resvRepo_.insertAudit(conn, index, "HIDE", "user:" + tel) || !txn.commit())
+        {
+            txn.rollback();
+            return makeError(err::kDbUpdate);
+        }
         return makeOk();
     }
 
@@ -407,7 +421,8 @@ namespace hyperticket
         for (const Reservation &r : expired)
         {
             if (!resvRepo_.setExpired(conn, r.id) ||
-                !ticketRepo_.adjustSeats(conn, r.ticketId, r.quantity))
+                !ticketRepo_.adjustSeats(conn, r.ticketId, r.quantity) ||
+                !seatRepo_.releaseByReservation(conn, r.id))
             {
                 txn.rollback();
                 return false;

@@ -3,8 +3,16 @@ set -euo pipefail
 
 project_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 env_file="$project_dir/.env"
-test_tel="13999990004"
 test_password="Phase4Test1"
+test_provider="${PAYMENT_E2E_PROVIDER:-MOCK}"
+seat_mode="${PAYMENT_E2E_SEAT_MODE:-false}"
+expect_unavailable="${PAYMENT_E2E_EXPECT_ALIPAY_UNAVAILABLE:-false}"
+case "$test_provider" in
+  MOCK) test_tel="13999990004" ;;
+  ALIPAY) test_tel="13999990005" ;;
+  WECHAT) test_tel="13999990006" ;;
+  *) echo "Unsupported PAYMENT_E2E_PROVIDER: $test_provider" >&2; exit 2 ;;
+esac
 
 read_env() {
   local key="$1"
@@ -60,13 +68,24 @@ cleanup
   VALUES('$test_tel','phase4_e2e','$legacy_hash',1,NOW(3));"
 trap cleanup EXIT
 
-ticket_id="$("${mysql_cmd[@]}" -Nse \
-  "SELECT id FROM tickets WHERE status=1 AND available_seats>=2 AND price>0 ORDER BY id LIMIT 1")"
+if [[ "$seat_mode" == "true" ]]; then
+  ticket_id="$("${mysql_cmd[@]}" -Nse \
+    "SELECT t.id FROM tickets t JOIN seats s ON s.ticket_id=t.id
+     WHERE t.status=1 AND t.available_seats>=2 AND s.status='AVAILABLE'
+     GROUP BY t.id ORDER BY t.id LIMIT 1")"
+else
+  ticket_id="$("${mysql_cmd[@]}" -Nse \
+    "SELECT id FROM tickets WHERE status=1 AND available_seats>=2 AND price>0 ORDER BY id LIMIT 1")"
+fi
 if [[ -z "$ticket_id" ]]; then
   echo "No active ticket with at least two available seats." >&2
   exit 1
 fi
 
+extra_args=()
+if [[ "$seat_mode" == "true" ]]; then extra_args+=(--seat-mode); fi
+if [[ "$expect_unavailable" == "true" ]]; then extra_args+=(--expect-alipay-unavailable); fi
 python3 "$project_dir/tests/payment_e2e.py" \
   --host 127.0.0.1 --port 7000 --tel "$test_tel" \
-  --password "$test_password" --ticket "$ticket_id"
+  --password "$test_password" --ticket "$ticket_id" --provider "$test_provider" \
+  "${extra_args[@]}"

@@ -81,8 +81,11 @@ namespace hyperticket
         std::string currency = "CNY";
         std::string status;
         std::string paymentNo;
+        std::string provider;
         std::string paymentProviderTransactionId;
         std::string providerRefundId;
+        int attemptCount = 0;
+        int maxAttempts = 5;
     };
 
     struct Seat

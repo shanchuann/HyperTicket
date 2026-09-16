@@ -122,6 +122,17 @@ namespace hyperticket
             return upd.execute();
         }
 
+        // 取消或超时订单释放座位；非选座订单不会命中任何行，也视为成功。
+        bool releaseByReservation(MYSQL *conn, int64_t reservationId)
+        {
+            MysqlStmt st(conn,
+                "UPDATE seats SET status='AVAILABLE',reservation_id=NULL "
+                "WHERE reservation_id=? AND status='SOLD'");
+            if (!st.ok()) return false;
+            st.bindInt(0, reservationId);
+            return st.execute();
+        }
+
         // 票务是否有剩余可选座位。
         bool hasAvailable(MYSQL *conn, int64_t ticketId)
         {

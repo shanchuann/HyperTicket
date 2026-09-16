@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS reservations (
   expire_at DATETIME DEFAULT NULL, -- PENDING 订单支付截止时间，超时定时任务回收
   order_no VARCHAR(32) DEFAULT NULL, -- 真实订单号 HT{YYYYMMDD}{ID:06d}，下单提交后生成
   request_id VARCHAR(64) DEFAULT NULL, -- 异步下单幂等 ID
+  deleted_at DATETIME(3) DEFAULT NULL, -- 用户侧逻辑删除，保留审计链
   created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   UNIQUE KEY uq_resv_order_no (order_no),
@@ -92,6 +93,7 @@ CREATE TABLE IF NOT EXISTS reservations (
   INDEX idx_reservations_user_status (user_id, status),  -- 复合索引：查询用户的有效订单
   INDEX idx_reservations_ticket_status (ticket_id, status),  -- 复合索引：统计票务预订情况
   INDEX idx_reservations_created (created_at),  -- 按时间查询订单（报表、清理过期订单）
+  INDEX idx_reservations_user_visible (user_id, deleted_at, id),
   INDEX idx_resv_pending_expire (status, expire_at)  -- 定时回收超时 PENDING 订单
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -141,6 +143,8 @@ CREATE TABLE IF NOT EXISTS refunds (
   provider_refund_id VARCHAR(128) DEFAULT NULL,
   reason VARCHAR(255) NOT NULL DEFAULT '',
   failure_reason VARCHAR(255) NOT NULL DEFAULT '',
+  attempt_count INT NOT NULL DEFAULT 0,
+  max_attempts INT NOT NULL DEFAULT 5,
   next_action_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
   updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),

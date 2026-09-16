@@ -39,7 +39,8 @@
   "payment": {
     "settle_delay_ms": 1000,
     "settle_interval_ms": 500,
-    "success_rate_percent": 100
+    "success_rate_percent": 100,
+    "simulated_channels_enabled": false
   },
   "auth": {
     "max_failures": 5,

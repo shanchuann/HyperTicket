@@ -28,7 +28,7 @@ namespace hyperticket
         std::string eventDate;
         int status = 1;
         std::string coverImage;
-        std::string category; // concert/sports/movie/theater/exhibition
+        std::string category; // concert/sports/esports/movie/theater/exhibition
         int price = 0;        // base price (yuan)
         std::string city;
         std::string description; // 详情简介

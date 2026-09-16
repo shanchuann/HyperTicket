@@ -124,7 +124,7 @@ INSERT INTO tickets (title, venue, city, total_seats, available_seats, event_dat
 SELECT * FROM (SELECT
   '2026 英雄联盟全球总决赛-入围赛' AS title, '武汉光谷国际网球中心' AS venue, '武汉' AS city,
   1400 AS total_seats, 1400 AS available_seats, '2026-10-10' AS event_date, 1 AS status,
-  'sports' AS category, 480 AS price, NULL AS artist,
+  'esports' AS category, 480 AS price, NULL AS artist,
   'S16全球总决赛中国主场。全球十六支顶级战队集结，见证新王加冕之路。' AS description,
   '1. 实名制购票。\n2. 单日票可观看当日全部对局。\n3. 场内提供官方应援物。' AS notice
 ) t WHERE NOT EXISTS (SELECT 1 FROM tickets WHERE title = t.title);

@@ -364,6 +364,7 @@ int main()
             [&service, &cfg]() { service.processQueuedOrders(cfg.order_queue.batch_size); });
     scheduler.addRunEvery(60000, [&sessionMgr]() { sessionMgr->purgeExpired(hyperticket::nowMs()); });
     scheduler.addRunEvery(300000, [&service]() { service.purgeAuthenticationState(); });
+    scheduler.addRunEvery(30000, [&service]() { service.dispatchSaleReminders(); });
 
     // 定期更新 metrics 资源指标
     if (metrics)

@@ -1,12 +1,12 @@
 import { useEffect, useRef } from 'react';
-import { CalendarDays, Download, MapPin, QrCode, TicketCheck, X } from 'lucide-react';
+import { CalendarDays, Download, MapPin, Printer, QrCode, TicketCheck, X } from 'lucide-react';
 import { QRCodeCanvas } from 'qrcode.react';
 import type { Order } from '../types';
 import './TicketCode.css';
 
-type Props = { order: Order; onClose: () => void };
+type Props = { order: Order; onClose: () => void; issuing?: boolean };
 
-export default function TicketCode({ order, onClose }: Props) {
+export default function TicketCode({ order, onClose, issuing = false }: Props) {
   const ticketRef = useRef<HTMLDivElement>(null);
   const code = order.order_no || `HT${String(order.id).padStart(10, '0')}`;
 
@@ -25,14 +25,15 @@ export default function TicketCode({ order, onClose }: Props) {
   };
 
   return <div className="ticket-code-backdrop" onMouseDown={event => event.target === event.currentTarget && onClose()}>
-    <section className="ticket-code-shell" role="dialog" aria-modal="true" aria-labelledby="ticket-code-title">
+    <section className={`ticket-code-shell ${issuing ? 'issuing' : ''}`} role="dialog" aria-modal="true" aria-labelledby="ticket-code-title">
       <div className="ticket-code-toolbar"><div><QrCode size={18}/><span>电子入场码</span></div><div><button onClick={print}><Download size={16}/>打印</button><button onClick={onClose} aria-label="关闭票码"><X size={20}/></button></div></div>
+      {issuing && <div className="ticket-printer-head"><Printer size={19}/><span>订单已确认 · 正在出票</span><i/></div>}
       <div className="ticket-code-card" ref={ticketRef}>
         <div className="ticket-code-status"><TicketCheck size={18}/><span>支付成功 · 可入场</span></div>
         <h2 id="ticket-code-title">{order.title}</h2>
         <div className="ticket-code-info"><span><CalendarDays size={15}/>{order.event_date || '日期待定'}</span><span><MapPin size={15}/>{order.venue || '场馆待定'}</span>{order.seat_label && <strong>{order.seat_label} · {order.seat_tier}</strong>}</div>
         <div className="ticket-code-divider"><i/><span>入场核验</span><i/></div>
-        <div className="ticket-code-qr"><QRCodeCanvas value={code} size={176} level="M" marginSize={2}/><div><b>{code}</b><span>数量：{order.quantity} 张</span><small>请向现场工作人员出示此码</small></div></div>
+        <div className="ticket-code-qr"><QRCodeCanvas value={code} size={176} level="M" marginSize={2}/><div><b>{code}</b><span>数量：{order.quantity} 张</span><span>票面：¥{order.seat_price || order.ticket_price * order.quantity}</span><small>请向现场工作人员出示此码</small></div></div>
         <p className="ticket-code-hint">票码仅供本人使用，请勿转发或截图分享。</p>
       </div>
     </section>

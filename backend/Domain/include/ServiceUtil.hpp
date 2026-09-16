@@ -117,6 +117,10 @@ namespace hyperticket
     bool verifyPassword(const std::string &password, const std::string &storedHash,
                         bool &needRehash);
 
+    std::string sha256Hex(const std::string &value);
+    std::string encryptSensitive(const std::string &value);
+    std::string maskIdentity(const std::string &value);
+
     // ========== 旧 FNV-1a 哈希（仅用于向后兼容验证） ==========
 
     inline std::string fnv1aHash(const std::string &password)

@@ -130,6 +130,10 @@ input::placeholder, textarea::placeholder { color: var(--muted); opacity: .85; }
 .search-box button { border: 0; background: transparent; color: var(--muted); padding: 4px; }
 .form-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px 20px; margin-top: 20px; }
 .form-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 22px; }
+.catalog-tabs { display: flex; gap: 4px; overflow-x: auto; margin: 0 0 18px; border-bottom: 1px solid var(--border); }
+.catalog-tabs button { display: flex; align-items: center; gap: 7px; padding: 11px 14px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); white-space: nowrap; }
+.catalog-tabs button.active { color: var(--brand); border-bottom-color: var(--brand); }
+.catalog-tabs small { min-width: 20px; padding: 2px 5px; background: var(--surface-2); color: inherit; font-size: 11px; }
 .status, .text-danger, .text-action { display: inline-flex; align-items: center; gap: 5px; }
 .status.ok { color: var(--success); }
 .status.blocked, .text-danger { color: var(--danger); }

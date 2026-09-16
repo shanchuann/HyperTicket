@@ -20,6 +20,7 @@
 #include "../repository/FavoriteRepository.hpp"
 #include "../repository/AuthSecurityRepository.hpp"
 #include "../repository/AuthChallengeRepository.hpp"
+#include "../repository/CatalogRepository.hpp"
 
 namespace hyperticket
 {
@@ -44,6 +45,7 @@ namespace hyperticket
         { orderQueue_ = queue; orderQueueMaxRetries_ = maxRetries; }
         int processQueuedOrders(int maxMessages);
         bool purgeAuthenticationState();
+        bool dispatchSaleReminders();
         // 模拟网关参数（config.json payment 段）：结算延迟与成功率。
         void configurePayment(int settleDelayMs, int successRatePercent)
         {
@@ -103,6 +105,16 @@ namespace hyperticket
         Json::Value accountSecurityStatus(const Json::Value &req);
         Json::Value requestContactVerification(const Json::Value &req);
         Json::Value confirmContactVerification(const Json::Value &req);
+        Json::Value catalogHome(const Json::Value &req);
+        Json::Value eventDetail(const Json::Value &req);
+        Json::Value profileGet(const Json::Value &req);
+        Json::Value profileUpdate(const Json::Value &req);
+        Json::Value attendeeList(const Json::Value &req);
+        Json::Value attendeeMutate(const Json::Value &req);
+        Json::Value browsingHistory(const Json::Value &req);
+        Json::Value saleReminderList(const Json::Value &req);
+        Json::Value saleReminderMutate(const Json::Value &req);
+        Json::Value eventFavorite(const Json::Value &req);
         bool consumeGrant(MYSQL *conn, const std::string &token,
                           const std::string &purpose, AuthChallenge &challengeOut);
 
@@ -115,6 +127,9 @@ namespace hyperticket
         Json::Value adminStats(const Json::Value &req);
         Json::Value adminBlacklist(const Json::Value &req);
         Json::Value adminChangePassword(const Json::Value &req);
+        Json::Value adminCatalog(const Json::Value &req);
+        Json::Value adminCatalogMutate(const Json::Value &req);
+        Json::Value adminReminderList(const Json::Value &req);
 
         // 管理员 token 管理
         std::string createAdminToken(const std::string &username, bool mustChangePassword);
@@ -139,6 +154,7 @@ namespace hyperticket
         FavoriteRepository favRepo_;
         AuthSecurityRepository authRepo_;
         AuthChallengeRepository challengeRepo_;
+        CatalogRepository catalogRepo_;
         IVerificationProvider *verificationProvider_ = nullptr;
         std::unordered_map<std::string, IPaymentProvider *> paymentProviders_;
 

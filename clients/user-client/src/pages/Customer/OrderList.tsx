@@ -1,11 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Calendar, MapPin, Clock, CheckCircle, XCircle, AlertCircle, Armchair, QrCode } from 'lucide-react';
+import { Calendar, MapPin, Clock, CheckCircle, XCircle, AlertCircle, Armchair, QrCode, ReceiptText } from 'lucide-react';
 import { orderApi } from '../../api/orders';
 import { toChineseError } from '../../api/errors';
 import type { Order } from '../../types';
 import Toast from '../../components/Toast';
 import TicketCode from '../../components/TicketCode';
+import PaymentDialog from '../../components/PaymentDialog';
 import './OrderList.css';
 
 const OrderList = () => {
@@ -14,8 +15,9 @@ const OrderList = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [cancellingId, setCancellingId] = useState<number | null>(null);
-  const [payingId, setPayingId] = useState<number | null>(null);
+  const [paymentOrder, setPaymentOrder] = useState<Order | null>(null);
   const [codeOrder, setCodeOrder] = useState<Order | null>(null);
+  const [issuingTicket, setIssuingTicket] = useState(false);
   const [actionMsg, setActionMsg] = useState('');
 
   useEffect(() => {
@@ -39,31 +41,12 @@ const OrderList = () => {
     loadOrders();
   }, [navigate]);
 
-  const handlePay = async (order: Order) => {
-    const token = localStorage.getItem('token');
-    if (!token) return;
-    setPayingId(order.id);
-    setActionMsg('');
-    try {
-      const p = await orderApi.payAndWait(token, order.id);
-      if (p.payment_status === 'SUCCESS') {
-        const fallback = { ...order, status: 'CONFIRMED' as const, expire_at: '' };
-        const refreshed = await orderApi.getMyOrders(token).catch(() => null);
-        if (refreshed) setOrders(refreshed);
-        else setOrders(prev => prev.map(o => o.id === order.id ? fallback : o));
-        setActionMsg('支付成功，电子入场码已生成');
-        setCodeOrder(refreshed?.find(item => item.id === order.id) || fallback);
-      } else {
-        setActionMsg(p.payment_status === 'FAILED' ? '支付失败，请重试' : '订单已失效，金额已退款');
-        orderApi.getMyOrders(token).then(setOrders).catch(() => {});
-      }
-    } catch {
-      // 结果未知或订单可能已超时回收，重新拉取
-      orderApi.getMyOrders(token).then(setOrders).catch(() => {});
-      setActionMsg('支付结果仍在确认中，已为你刷新订单状态');
-    } finally {
-      setPayingId(null);
-    }
+  const handlePaid = (paidOrder: Order) => {
+    setPaymentOrder(null);
+    setOrders(prev => prev.map(item => item.id === paidOrder.id ? paidOrder : item));
+    setActionMsg('支付成功，电子票已出票');
+    setIssuingTicket(true);
+    setCodeOrder(paidOrder);
   };
 
   const handleCancel = async (order: Order) => {
@@ -149,7 +132,8 @@ const OrderList = () => {
   return (
     <div className="order-list-container">
       <Toast message={actionMsg} tone={actionMsg.includes('已取消') || actionMsg.includes('成功') ? 'success' : 'error'} onClose={() => setActionMsg('')} />
-      {codeOrder && <TicketCode order={codeOrder} onClose={() => setCodeOrder(null)} />}
+      {paymentOrder && <PaymentDialog order={paymentOrder} onClose={() => setPaymentOrder(null)} onPaid={handlePaid} onError={setActionMsg}/>}
+      {codeOrder && <TicketCode order={codeOrder} issuing={issuingTicket} onClose={() => { setCodeOrder(null); setIssuingTicket(false); }} />}
       <h1 className="order-list-title">我的订单</h1>
 
       {orders.length === 0 ? (
@@ -168,6 +152,7 @@ const OrderList = () => {
                 <div className="order-header">
                   <div className="order-info">
                     <span className="order-id">订单 #{order.id}</span>
+                    {order.order_no && <span className="order-number">{order.order_no}</span>}
                   </div>
                   <div
                     className="order-status"
@@ -202,13 +187,14 @@ const OrderList = () => {
                   <div className="order-quantity">
                     数量: <strong>{order.quantity}</strong> 张
                   </div>
+                  <div className="order-total"><span>合计</span><strong>¥{order.seat_price || order.ticket_price * order.quantity}</strong></div>
                 </div>
 
                 {(order.status === 'PENDING' || order.status === 'CONFIRMED') && (
                   <div className="order-actions">
                     {order.status === 'PENDING' && (
-                      <button className="order-btn order-btn-primary" disabled={payingId === order.id} onClick={() => handlePay(order)}>
-                        {payingId === order.id ? '支付确认中…' : '去支付'}
+                      <button className="order-btn order-btn-primary" onClick={() => { setActionMsg(''); setPaymentOrder(order); }}>
+                        <ReceiptText size={16}/>去支付
                       </button>
                     )}
                     {order.status === 'CONFIRMED' && (

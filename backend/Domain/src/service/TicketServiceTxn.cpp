@@ -5,8 +5,11 @@
 #include "../../include/ServiceUtil.hpp"
 #include "../../include/service/Txn.hpp"
 #include "../../../ChronoLite/include/Logger.hpp"
+#include <algorithm>
 #include <random>
 #include <sstream>
+#include <unordered_set>
+#include <vector>
 
 namespace hyperticket
 {
@@ -36,9 +39,31 @@ namespace hyperticket
         int qty = static_cast<int>(getIntField(req, field::kQuantity, 1));
         if (qty < 1 || qty > 6) return makeError(err::kInvalidInput);
 
-        // 可选座位 id（选座模式下非零；选座单固定 1 张）
+        // 选座订单使用 seat_ids；保留单个 seat_id 兼容旧客户端。
         int64_t seatId = getIntField(req, "seat_id", 0);
-        if (seatId > 0) qty = 1;
+        std::vector<int64_t> seatIds;
+        const Json::Value &seatIdsValue = req["seat_ids"];
+        if (!seatIdsValue.isNull())
+        {
+            if (!seatIdsValue.isArray() || seatIdsValue.empty() || seatId > 0)
+                return makeError(err::kInvalidInput);
+            std::unordered_set<int64_t> uniqueSeatIds;
+            for (const Json::Value &value : seatIdsValue)
+            {
+                if (!value.isIntegral()) return makeError(err::kInvalidInput);
+                const int64_t id = value.asInt64();
+                if (id <= 0 || !uniqueSeatIds.insert(id).second)
+                    return makeError(err::kInvalidInput);
+                seatIds.push_back(id);
+            }
+            if (seatIds.size() > 6 || static_cast<int>(seatIds.size()) != qty)
+                return makeError(err::kInvalidInput);
+        }
+        else if (seatId > 0)
+        {
+            qty = 1;
+            seatIds.push_back(seatId);
+        }
 
         if (!orderQueue_) return makeError("ORDER_QUEUE_UNAVAILABLE");
 
@@ -54,7 +79,9 @@ namespace hyperticket
         payload["usertel"] = tel;
         payload["ticket_id"] = static_cast<Json::Int64>(tkId);
         payload["quantity"] = qty;
-        payload["seat_id"] = static_cast<Json::Int64>(seatId);
+        payload["seat_ids"] = Json::arrayValue;
+        for (const int64_t id : seatIds)
+            payload["seat_ids"].append(static_cast<Json::Int64>(id));
         payload["created_ms"] = static_cast<Json::Int64>(nowMs());
         Json::StreamWriterBuilder wb; wb["indentation"] = "";
         std::string streamId;
@@ -126,10 +153,19 @@ namespace hyperticket
             const int64_t userId=getIntField(p,"user_id",0);
             const int64_t ticketId=getIntField(p,"ticket_id",0);
             const int qty=static_cast<int>(getIntField(p,"quantity",0));
-            const int64_t seatId=getIntField(p,"seat_id",0);
+            std::vector<int64_t> seatIds;
+            const Json::Value &queuedSeatIds=p["seat_ids"];
+            if(queuedSeatIds.isArray())
+                for(const Json::Value &value:queuedSeatIds)
+                    if(value.isIntegral()) seatIds.push_back(value.asInt64());
+            const int64_t legacySeatId=getIntField(p,"seat_id",0);
+            if(seatIds.empty() && legacySeatId>0) seatIds.push_back(legacySeatId);
             const int64_t createdMs=getIntField(p,"created_ms",nowMs());
             const std::string tel=p.get("usertel","").asString();
-            if(userId<=0||ticketId<=0||qty<1||qty>6)
+            std::sort(seatIds.begin(),seatIds.end());
+            const bool duplicateSeats=std::adjacent_find(seatIds.begin(),seatIds.end())!=seatIds.end();
+            if(userId<=0||ticketId<=0||qty<1||qty>6||duplicateSeats||
+               (!seatIds.empty() && static_cast<int>(seatIds.size())!=qty))
             {
                 orderQueue_->terminalFailure(msg,ticketId,qty,userId,"INVALID_MESSAGE");
                 ++processed; continue;
@@ -162,8 +198,16 @@ namespace hyperticket
             if(failure.empty())
             {
                 resvId=static_cast<int64_t>(mysql_insert_id(conn));
-                if(seatId>0 && !seatRepo_.lockAndSell(conn,seatId,ticketId,resvId)) failure="SEAT_TAKEN";
-                else resvRepo_.insertAuditLastInsert(conn,"CREATE","queue:"+msg.requestId+" user:"+tel);
+                for(const int64_t selectedSeatId:seatIds)
+                {
+                    if(!seatRepo_.lockAndSell(conn,selectedSeatId,ticketId,resvId))
+                    {
+                        failure="SEAT_TAKEN";
+                        break;
+                    }
+                }
+                if(failure.empty())
+                    resvRepo_.insertAuditLastInsert(conn,"CREATE","queue:"+msg.requestId+" user:"+tel);
             }
             if(!failure.empty() || !txn.commit())
             {

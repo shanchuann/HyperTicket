@@ -48,6 +48,19 @@ namespace hyperticket
         case FAVORITE:              return favorite(req);
         case VIEW_FAVORITES:        return viewFavorites(req);
         case HOT_TICKETS:           return hotTickets(req);
+        case CATALOG_HOME:          return catalogHome(req);
+        case EVENT_DETAIL:          return eventDetail(req);
+        case PROFILE_GET:           return profileGet(req);
+        case PROFILE_UPDATE:        return profileUpdate(req);
+        case ATTENDEE_LIST:         return attendeeList(req);
+        case ATTENDEE_MUTATE:       return attendeeMutate(req);
+        case BROWSING_HISTORY:      return browsingHistory(req);
+        case SALE_REMINDER_LIST:    return saleReminderList(req);
+        case SALE_REMINDER_MUTATE:  return saleReminderMutate(req);
+        case EVENT_FAVORITE:        return eventFavorite(req);
+        case ADMIN_CATALOG:         return adminCatalog(req);
+        case ADMIN_CATALOG_MUTATE:  return adminCatalogMutate(req);
+        case ADMIN_REMINDER_LIST:   return adminReminderList(req);
         default:       return makeError(err::kUnknownType);
         }
     }

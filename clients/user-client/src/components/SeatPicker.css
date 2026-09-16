@@ -79,6 +79,7 @@
 .seat.sold,
 .seat-legend .sold { background: var(--color-divider); border-color: var(--color-divider); color: var(--color-text-disabled); opacity: .5; }
 .seat.sold { cursor: not-allowed; }
+.seat:disabled:not(.sold) { cursor: not-allowed; opacity: .45; }
 
 .seat-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 14px; padding: 11px 24px; color: var(--color-text-secondary); font-size: var(--text-caption); }
 .seat-legend span { display: flex; align-items: center; gap: 5px; }
@@ -89,7 +90,7 @@
 .seat-selection-summary { min-width: 0; display: grid; gap: 3px; color: var(--color-text-secondary); font-size: var(--text-body-sm); }
 .seat-selection-summary > small { color: var(--color-text-tertiary); font-size: 10px; }
 .seat-selection-summary > span { display: flex; align-items: baseline; gap: 9px; }
-.seat-selection-summary strong { color: var(--color-text-primary); font-size: var(--text-h4); }
+.seat-selection-summary strong { max-width: 34ch; color: var(--color-text-primary); font-size: var(--text-body); overflow-wrap: anywhere; }
 .seat-selection-summary em { color: var(--color-text-secondary); font-size: var(--text-caption); font-style: normal; }
 .seat-selection-summary b { color: var(--color-error); font-size: var(--text-h4); }
 .seat-picker-confirm { flex: 0 0 auto; min-height: 42px; display: inline-flex; align-items: center; gap: 7px; padding: 10px 20px; border: 0; background: var(--color-primary); color: white; font-weight: var(--weight-semibold); transition: transform 160ms var(--ease-out-quart), background-color 160ms ease-out; }

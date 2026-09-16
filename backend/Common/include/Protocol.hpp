@@ -50,6 +50,19 @@ namespace hyperticket
         ACCOUNT_SECURITY_STATUS = 31,
         CONTACT_VERIFICATION_REQUEST = 32,
         CONTACT_VERIFICATION_CONFIRM = 33,
+        CATALOG_HOME = 34,
+        EVENT_DETAIL = 35,
+        PROFILE_GET = 36,
+        PROFILE_UPDATE = 37,
+        ATTENDEE_LIST = 38,
+        ATTENDEE_MUTATE = 39,
+        BROWSING_HISTORY = 40,
+        SALE_REMINDER_LIST = 41,
+        SALE_REMINDER_MUTATE = 42,
+        EVENT_FAVORITE = 43,
+        ADMIN_CATALOG = 44,
+        ADMIN_CATALOG_MUTATE = 45,
+        ADMIN_REMINDER_LIST = 46,
     };
 
     // 协议字段名常量，避免魔法字符串散落各处。

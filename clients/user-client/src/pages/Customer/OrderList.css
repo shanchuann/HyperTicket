@@ -119,6 +119,7 @@
   font-weight: var(--weight-medium);
   color: var(--color-text-primary);
 }
+.order-number { color: var(--color-text-secondary); font: var(--text-caption) var(--font-mono); }
 
 .order-status {
   display: flex;
@@ -173,6 +174,8 @@
   color: var(--color-text-primary);
   font-weight: var(--weight-semibold);
 }
+.order-total { display: flex; align-items: baseline; gap: 8px; color: var(--color-text-secondary); font-size: var(--text-body-sm); }
+.order-total strong { color: var(--color-primary); font: var(--weight-semibold) var(--text-h4) var(--font-mono); }
 
 /* Order Actions */
 .order-actions {
@@ -232,6 +235,7 @@
   .order-actions {
     flex-direction: column;
   }
+  .order-footer { align-items: flex-end; }
 }
 
 /* v2：去支付 */

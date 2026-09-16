@@ -18,7 +18,7 @@ type Props = {
 export default function SeatPicker({ ticket, quantity, onClose, onSuccess, onError }: Props) {
   const [seats, setSeats] = useState<Seat[]>([]);
   const [hasSeats, setHasSeats] = useState(false);
-  const [selected, setSelected] = useState<Seat | null>(null);
+  const [selected, setSelected] = useState<Seat[]>([]);
   const [loading, setLoading] = useState(true);
   const [ordering, setOrdering] = useState(false);
 
@@ -51,20 +51,20 @@ export default function SeatPicker({ ticket, quantity, onClose, onSuccess, onErr
   const submit = async () => {
     const token = localStorage.getItem('token');
     if (!token) { onError('请先登录后再预订'); return; }
-    if (hasSeats && !selected) { onError('请先选择一个可用座位'); return; }
+    if (hasSeats && selected.length !== quantity) { onError(`请选择 ${quantity} 个座位`); return; }
     setOrdering(true);
     try {
-      if (selected) await orderApi.createSeatOrderAndWait(token, ticket.id, selected.id);
+      if (selected.length) await orderApi.createSeatOrderAndWait(token, ticket.id, selected.map(seat => seat.id));
       else await orderApi.createOrderAndWait(token, ticket.id, quantity);
-      onSuccess(selected
-        ? `已锁定「${ticket.title}」${selected.label}，请在订单页完成支付`
+      onSuccess(selected.length
+        ? `已锁定「${ticket.title}」${selected.map(seat => seat.label).join('、')}，请在订单页完成支付`
         : `已锁定 ${quantity} 张「${ticket.title}」，请在订单页完成支付`);
       onClose();
     } catch (error) {
       onError(toChineseError(error, '预订失败，请重新选择'));
       if (hasSeats) {
         orderApi.getSeats(ticket.id).then(result => setSeats(result.seats)).catch(() => undefined);
-        setSelected(null);
+        setSelected([]);
       }
     } finally { setOrdering(false); }
   };
@@ -83,7 +83,7 @@ export default function SeatPicker({ ticket, quantity, onClose, onSuccess, onErr
 
         {loading ? <div className="seat-picker-loading"><Loader2 className="spinner"/><span>正在读取可用座位</span></div> : hasSeats ? <>
           <div className="seat-picker-plan-head">
-            <div><strong>选择座位</strong><span>座位按场次排号与座号定位，横向滑动可查看完整区域。</span></div>
+            <div><strong>选择 {quantity} 个座位</strong><span>已选 {selected.length}/{quantity}，再次点击可取消。</span></div>
             <b>{availableCount} 个可选</b>
           </div>
           <div className="seat-picker-scroll" tabIndex={0} aria-label="座位分布图，可横向和纵向滚动">
@@ -104,11 +104,11 @@ export default function SeatPicker({ ticket, quantity, onClose, onSuccess, onErr
                 <div className="seat-grid" style={seatGridStyle}>{items.map(seat => <button
                   key={seat.id}
                   style={{ gridColumn: seat.col + (seat.col > aisleAfter ? 1 : 0), gridRow: 1 }}
-                  className={`seat ${seat.tier.toLowerCase()} ${seat.status === 'SOLD' ? 'sold' : ''} ${selected?.id === seat.id ? 'selected' : ''}`}
-                  disabled={seat.status === 'SOLD'}
-                  onClick={() => setSelected(seat)}
+                  className={`seat ${seat.tier.toLowerCase()} ${seat.status === 'SOLD' ? 'sold' : ''} ${selected.some(item => item.id === seat.id) ? 'selected' : ''}`}
+                  disabled={seat.status === 'SOLD' || (selected.length >= quantity && !selected.some(item => item.id === seat.id))}
+                  onClick={() => setSelected(current => current.some(item => item.id === seat.id) ? current.filter(item => item.id !== seat.id) : [...current, seat])}
                   aria-label={`${seat.label}，第 ${seat.row} 排第 ${seat.col} 座，${tierLabel[seat.tier]}，${seat.price} 元${seat.status === 'SOLD' ? '，已售' : ''}`}
-                  aria-pressed={selected?.id === seat.id}
+                  aria-pressed={selected.some(item => item.id === seat.id)}
                   title={`${seat.label} · ${tierLabel[seat.tier]} · ¥${seat.price}`}
                 ><Armchair size={15}/><small>{seat.col}</small></button>)}</div>
               </div>)}
@@ -118,8 +118,8 @@ export default function SeatPicker({ ticket, quantity, onClose, onSuccess, onErr
         </> : <div className="seat-picker-general"><TicketCheck size={30}/><div><b>本场不设在线选座</b><span>将按你选择的数量预留票券，共 {quantity} 张。</span></div></div>}
 
         <footer>
-          <div className="seat-selection-summary"><small>当前选择</small>{selected ? <span><strong>{selected.label}</strong><em>{tierLabel[selected.tier]}</em><b>¥{selected.price}</b></span> : <span>{hasSeats ? '尚未选择座位' : `普通票 × ${quantity}`}</span>}</div>
-          <button className="seat-picker-confirm" onClick={submit} disabled={loading || ordering || (hasSeats && !selected)}>{ordering ? <><Loader2 size={16} className="spinner"/>正在锁定</> : <>确认并锁定<TicketCheck size={17}/></>}</button>
+          <div className="seat-selection-summary"><small>当前选择</small>{selected.length ? <span><strong>{selected.map(seat => seat.label).join('、')}</strong><em>{selected.map(seat => tierLabel[seat.tier]).filter((tier, index, all) => all.indexOf(tier) === index).join(' / ')}</em><b>¥{selected.reduce((sum, seat) => sum + seat.price, 0)}</b></span> : <span>{hasSeats ? `请选择 ${quantity} 个座位` : `普通票 × ${quantity}`}</span>}</div>
+          <button className="seat-picker-confirm" onClick={submit} disabled={loading || ordering || (hasSeats && selected.length !== quantity)}>{ordering ? <><Loader2 size={16} className="spinner"/>正在锁定</> : <>确认并锁定<TicketCheck size={17}/></>}</button>
         </footer>
       </section>
     </div>

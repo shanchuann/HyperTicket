@@ -56,21 +56,25 @@ const createRequestId = () => {
 
 export type PaymentResponse = BackendResponse & {
   payment_no?: string;
-  payment_status?: 'PROCESSING' | 'SUCCESS' | 'FAILED' | 'REFUNDED';
+  payment_status?: 'CREATED' | 'PROCESSING' | 'SUCCEEDED' | 'FAILED' | 'CLOSED' | 'REFUNDING' | 'PARTIALLY_REFUNDED' | 'REFUNDED';
+  amount_minor?: number;
   amount?: number;
-  method?: string;
+  currency?: string;
+  provider?: string;
+  provider_transaction_id?: string;
+  idempotency_key?: string;
   order_status?: string;
 };
 
 export const orderApi = {
-  async createOrder(token: string, ticketId: number, quantity = 1, requestId = createRequestId(), seatId?: number): Promise<CreateOrderResponse> {
+  async createOrder(token: string, ticketId: number, quantity = 1, requestId = createRequestId(), seatIds?: number[]): Promise<CreateOrderResponse> {
     return wsClient.send<CreateOrderResponse>({
       type: 5,
       token,
       index: ticketId,       // 后端期望整数
       ...(quantity > 1 ? { quantity } : {}),
       request_id: requestId,
-      ...(seatId ? { seat_id: seatId } : {}),
+      ...(seatIds?.length ? { seat_ids: seatIds } : {}),
     });
   },
 
@@ -103,10 +107,10 @@ export const orderApi = {
     return this.waitForQueuedOrder(token, queued.request_id, timeoutMs);
   },
 
-  async createSeatOrderAndWait(token: string, ticketId: number, seatId: number, timeoutMs = 20000): Promise<OrderQueueResponse> {
+  async createSeatOrderAndWait(token: string, ticketId: number, seatIds: number[], timeoutMs = 20000): Promise<OrderQueueResponse> {
     const requestId = createRequestId();
     savePendingOrder(requestId);
-    const queued = await this.createOrder(token, ticketId, 1, requestId, seatId);
+    const queued = await this.createOrder(token, ticketId, seatIds.length, requestId, seatIds);
     if (!queued.request_id) throw new Error('服务端未返回下单请求编号');
     return this.waitForQueuedOrder(token, queued.request_id, timeoutMs);
   },
@@ -127,8 +131,8 @@ export const orderApi = {
   },
 
   // v3 异步支付：发起支付创建流水，由后端模拟网关异步结算
-  async payOrder(token: string, reservationId: number, method = 'MOCK'): Promise<PaymentResponse> {
-    return wsClient.send<PaymentResponse>({ type: 20, token, index: String(reservationId), method });
+  async payOrder(token: string, reservationId: number, provider = 'MOCK', idempotencyKey = createRequestId().replace('checkout_', 'pay_')): Promise<PaymentResponse> {
+    return wsClient.send<PaymentResponse>({ type: 20, token, index: reservationId, provider, idempotency_key: idempotencyKey });
   },
 
   async queryPayment(token: string, reservationId: number): Promise<PaymentResponse> {
@@ -136,16 +140,20 @@ export const orderApi = {
   },
 
   // 发起支付并轮询至终态；超时抛错，由调用方兜底刷新订单
-  async payAndWait(token: string, reservationId: number, method = 'MOCK', timeoutMs = 15000): Promise<PaymentResponse> {
-    const first = await this.payOrder(token, reservationId, method);
-    if (first.payment_status && first.payment_status !== 'PROCESSING') return first;
+  async waitForPayment(token: string, reservationId: number, timeoutMs = 15000): Promise<PaymentResponse> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 800));
+      await new Promise(r => setTimeout(r, 500));
       const p = await this.queryPayment(token, reservationId);
-      if (p.payment_status && p.payment_status !== 'PROCESSING') return p;
+      if (p.payment_status && !['CREATED', 'PROCESSING'].includes(p.payment_status)) return p;
     }
     throw new Error('支付结果确认超时，请稍后在订单列表查看');
+  },
+
+  async payAndWait(token: string, reservationId: number, provider = 'MOCK', timeoutMs = 15000): Promise<PaymentResponse> {
+    const first = await this.payOrder(token, reservationId, provider);
+    if (first.payment_status && !['CREATED', 'PROCESSING'].includes(first.payment_status)) return first;
+    return this.waitForPayment(token, reservationId, timeoutMs);
   },
 
   async getMyOrders(token: string): Promise<Order[]> {

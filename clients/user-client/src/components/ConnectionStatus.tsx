@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { CheckCircle2, CircleAlert, LoaderCircle } from 'lucide-react';
+import wsClient from '../api/client';
 import './ConnectionStatus.css';
 
 const ConnectionStatus = () => {
@@ -8,7 +8,7 @@ const ConnectionStatus = () => {
 
   useEffect(() => {
     const check = () => {
-      invoke<boolean>('check_connection')
+      wsClient.isConnected()
         .then(connected => setState(connected ? 'connected' : 'disconnected'))
         .catch(() => setState('disconnected'));
     };

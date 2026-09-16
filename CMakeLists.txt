@@ -44,6 +44,7 @@ set(DOMAIN_SRC
 	backend/Domain/src/service/TicketServicePay.cpp
 	backend/Domain/src/service/TicketServiceAdmin.cpp
 	backend/Domain/src/service/TicketServiceAuth.cpp
+	backend/Domain/src/service/TicketServiceCatalog.cpp
 	backend/Domain/src/ServiceUtil.cpp
 )
 
@@ -113,7 +114,7 @@ target_link_libraries(client PRIVATE ${JSONCPP_LIB} Threads::Threads)
 
 add_executable(admin backend/Admin/src/admin.cpp ${COMMON_SRC} backend/Domain/src/ServiceUtil.cpp ${CHRONOLITE_SRC})
 target_include_directories(admin PRIVATE backend/Common/include backend/Domain/include backend/Admin/include backend/ChronoLite/include)
-target_link_libraries(admin PRIVATE ${MYSQLCLIENT_LIB} ${JSONCPP_LIB} crypt Threads::Threads)
+target_link_libraries(admin PRIVATE ${MYSQLCLIENT_LIB} ${JSONCPP_LIB} crypt Threads::Threads OpenSSL::Crypto)
 
 # ---- Unit tests (zero external deps, registered with CTest) ----
 enable_testing()

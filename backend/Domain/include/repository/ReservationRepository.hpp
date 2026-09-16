@@ -138,12 +138,13 @@ namespace hyperticket
                 "SELECT r.id, COALESCE(r.order_no,''), r.ticket_id, t.title, t.venue, "
                 "       t.event_date, r.status, r.quantity, "
                 "       DATE_FORMAT(r.created_at,'%Y-%m-%d %H:%i:%s'), t.category, "
-                "       COALESCE(s.seat_label,''), COALESCE(s.tier,''), COALESCE(s.price,0), "
+                "       COALESCE((SELECT GROUP_CONCAT(s.seat_label ORDER BY s.row_label,s.col_num SEPARATOR '、') FROM seats s WHERE s.reservation_id=r.id),''), "
+                "       COALESCE((SELECT GROUP_CONCAT(DISTINCT s.tier ORDER BY s.tier SEPARATOR ' / ') FROM seats s WHERE s.reservation_id=r.id),''), "
+                "       COALESCE((SELECT SUM(s.price) FROM seats s WHERE s.reservation_id=r.id),0), "
                 "       COALESCE(DATE_FORMAT(r.expire_at,'%Y-%m-%d %H:%i:%s'),''), t.price "
                 "FROM reservations r "
                 "JOIN users u ON r.user_id = u.id "
                 "JOIN tickets t ON r.ticket_id = t.id "
-                "LEFT JOIN seats s ON s.reservation_id = r.id "
                 "WHERE u.tel = ? AND r.deleted_at IS NULL ORDER BY r.id DESC");
             if (!st.ok()) return out;
             st.bindString(0, tel);
@@ -188,10 +189,11 @@ namespace hyperticket
         {
             MysqlStmt st(conn,
                 "SELECT r.id, r.order_no, r.ticket_id, t.title, t.venue, "
-                "       t.event_date, r.status, COALESCE(s.seat_label,''), COALESCE(s.tier,'') "
+                "       t.event_date, r.status, "
+                "       COALESCE((SELECT GROUP_CONCAT(s.seat_label ORDER BY s.row_label,s.col_num SEPARATOR '、') FROM seats s WHERE s.reservation_id=r.id),''), "
+                "       COALESCE((SELECT GROUP_CONCAT(DISTINCT s.tier ORDER BY s.tier SEPARATOR ' / ') FROM seats s WHERE s.reservation_id=r.id),'') "
                 "FROM reservations r "
                 "JOIN tickets t ON r.ticket_id = t.id "
-                "LEFT JOIN seats s ON s.reservation_id = r.id "
                 "WHERE r.order_no = ?");
             if (!st.ok()) return false;
             st.bindString(0, orderNo);

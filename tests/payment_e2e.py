@@ -30,14 +30,14 @@ def require_ok(response, context):
     return response
 
 
-def create_order(client, token, ticket_id, suffix, seat_id=None):
+def create_order(client, token, ticket_id, suffix, seat_ids=None):
     request_id = f"phase4-order-{suffix}-{time.time_ns()}"
     payload = {
         "type": 5, "token": token, "index": ticket_id,
-        "quantity": 1, "request_id": request_id,
+        "quantity": len(seat_ids) if seat_ids else 1, "request_id": request_id,
     }
-    if seat_id:
-        payload["seat_id"] = seat_id
+    if seat_ids:
+        payload["seat_ids"] = seat_ids
     require_ok(client.call(payload), "enqueue order")
     deadline = time.time() + 15
     while time.time() < deadline:
@@ -87,16 +87,16 @@ def main():
             "client_id": "phase4-e2e",
         }), "login")
         token = login["token"]
-        seat_id = None
+        seat_ids = []
         if args.seat_mode:
             seats = require_ok(client.call({
                 "type": 17, "token": token, "index": args.ticket,
             }), "list seats")
             available = [row for row in seats.get("arr", []) if row.get("status") == "AVAILABLE"]
-            if not available:
-                raise AssertionError("no available seat for seat-mode test")
-            seat_id = available[0]["id"]
-        first_reservation = create_order(client, token, args.ticket, "a", seat_id)
+            if len(available) < 2:
+                raise AssertionError("fewer than two available seats for seat-mode test")
+            seat_ids = [available[0]["id"], available[1]["id"]]
+        first_reservation = create_order(client, token, args.ticket, "a", seat_ids)
         reservations.append(first_reservation)
         second_reservation = create_order(client, token, args.ticket, "b")
         reservations.append(second_reservation)
@@ -142,13 +142,13 @@ def main():
         refunded = wait_payment(client, token, first_reservation, "REFUNDED")
         assert refunded["order_status"] == "CANCELLED", refunded
 
-        if seat_id:
+        if seat_ids:
             seats_after = require_ok(client.call({
                 "type": 17, "token": token, "index": args.ticket,
             }), "list seats after cancellation")
-            released = [row for row in seats_after.get("arr", [])
-                        if row.get("id") == seat_id and row.get("status") == "AVAILABLE"]
-            assert released, seats_after
+            released = {row.get("id") for row in seats_after.get("arr", [])
+                        if row.get("id") in seat_ids and row.get("status") == "AVAILABLE"}
+            assert released == set(seat_ids), seats_after
 
         require_ok(client.call({
             "type": 16, "token": token, "index": first_reservation,

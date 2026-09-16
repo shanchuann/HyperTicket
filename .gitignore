@@ -59,3 +59,5 @@ clients/user-client/dist/
 .agents/
 .claude/
 skills-lock.json
+backups/
+artifacts/

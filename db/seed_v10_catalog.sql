@@ -131,15 +131,18 @@ BEGIN
     IF done=1 THEN LEAVE event_loop; END IF;
     SET session_index=0;
     WHILE session_index<2 DO
-      SET starts_at=DATE_ADD(DATE_ADD(NOW(),INTERVAL (7+MOD(event_id,32)+session_index*9) DAY),INTERVAL (18+MOD(event_id,3)) HOUR);
+      SET starts_at=DATE_ADD(DATE_ADD(NOW(),INTERVAL
+        (CASE WHEN event_id<=7 THEN -10+session_index*2 WHEN event_id<=14 THEN 2+session_index*2 ELSE 12+MOD(event_id,20)+session_index*9 END) DAY),
+        INTERVAL (18+MOD(event_id,3)) HOUR);
       INSERT INTO tickets(title,venue,total_seats,available_seats,event_date,status,cover_image,category,price,city,artist,description,notice)
         SELECT event_title,v.name,80,80,DATE(starts_at),1,event_cover,event_category,FLOOR(base_price/100),event_city,event_artist,e.description,e.notice
         FROM venues v JOIN events e ON e.id=event_id WHERE v.id=venue_id;
       SET ticket_id=LAST_INSERT_ID();
       INSERT INTO event_sessions(event_id,venue_id,hall_id,legacy_ticket_id,session_name,sale_start_at,sale_end_at,starts_at,ends_at,status)
         VALUES(event_id,venue_id,hall_id,ticket_id,CONCAT('第',session_index+1,'场'),
-          DATE_SUB(NOW(),INTERVAL IF(session_index=0,5,-3) DAY),DATE_SUB(starts_at,INTERVAL 1 DAY),starts_at,DATE_ADD(starts_at,INTERVAL 2 HOUR),
-          IF(session_index=0,'ON_SALE','SCHEDULED'));
+          CASE WHEN event_id<=14 THEN DATE_SUB(NOW(),INTERVAL 5 DAY) ELSE DATE_ADD(NOW(),INTERVAL 2 DAY) END,
+          DATE_SUB(starts_at,INTERVAL 1 DAY),starts_at,DATE_ADD(starts_at,INTERVAL 2 HOUR),
+          CASE WHEN starts_at<NOW() THEN 'ENDED' WHEN DATE_ADD(starts_at,INTERVAL -1 DAY)<=NOW() THEN 'ON_SALE' ELSE 'SCHEDULED' END);
       SET session_id=LAST_INSERT_ID();
       INSERT INTO ticket_tiers(session_id,name,price_minor,inventory,available_inventory,purchase_limit,seat_mode,sort_order) VALUES
         (session_id,'臻享区',base_price*2,16,16,4,'RESERVED',1),

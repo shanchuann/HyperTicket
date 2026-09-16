@@ -100,7 +100,7 @@ export default function CustomSelect({ label, value, options, onChange }: Props)
           onPointerMove={() => setActive(index)}
           onClick={() => choose(index)}
         >
-          <span>{option.label}</span>{option.value === value && <Check size={16}/>} 
+          <span>{option.label}</span>{option.value === value && <Check size={16}/>}
         </button>)}
       </div>,
       document.body

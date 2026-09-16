@@ -26,4 +26,3 @@ The C++ service continues to use Windows MySQL and WSL2 Redis. Public catalog re
 ## Admin workflow
 
 The admin client now exposes Activity catalog tabs for activities, venues, halls, sessions, and ticket tiers, plus a sale-reminder audit table. Session creation validates `sale_start_at < sale_end_at < starts_at`, creates a compatibility ticket row and independent seat inventory, and supports copying a session configuration.
-

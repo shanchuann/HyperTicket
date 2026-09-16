@@ -91,7 +91,7 @@ export default function PaymentDialog({ order, onClose, onPaid, onError }: Props
       <div className="payment-amount"><span>应付金额</span><strong><small>¥</small>{(amountMinor / 100).toFixed(2)}</strong></div>
 
       <div className={`payment-qr ${phase}`}>
-        {phase === 'loading' ? <Loader2 className="spinner" size={42}/> : phase === 'paid' ? <CheckCircle2 size={72}/> : <QRCodeCanvas value={qrPayload} size={188} level="M" marginSize={2}/>} 
+        {phase === 'loading' ? <Loader2 className="spinner" size={42}/> : phase === 'paid' ? <CheckCircle2 size={72}/> : <QRCodeCanvas value={qrPayload} size={188} level="M" marginSize={2}/>}
         {phase !== 'loading' && phase !== 'paid' && <i><ScanLine size={17}/>模拟二维码</i>}
       </div>
 

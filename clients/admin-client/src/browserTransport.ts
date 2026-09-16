@@ -1,7 +1,4 @@
-import { invoke } from '@tauri-apps/api/core';
-import type { BackendResponse } from '../types';
-import { toChineseError } from './errors';
-
+type BackendResponse = { status: 'OK' | 'ERR'; reason?: string; [key: string]: unknown };
 type PendingRequest = {
   resolve: (response: BackendResponse) => void;
   reject: (error: Error) => void;
@@ -9,13 +6,13 @@ type PendingRequest = {
   timedOut: boolean;
 };
 
-class BrowserWebSocketClient {
+class AdminBrowserTransport {
   private socket: WebSocket | null = null;
   private connecting: Promise<void> | null = null;
-  private requests: PendingRequest[] = [];
-  private readonly url = import.meta.env.VITE_WS_URL || BrowserWebSocketClient.defaultUrl();
+  private pending: PendingRequest[] = [];
 
-  private static defaultUrl() {
+  private url() {
+    if (import.meta.env.VITE_WS_URL) return import.meta.env.VITE_WS_URL;
     if (import.meta.env.DEV) return 'ws://localhost:8080/ws';
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${protocol}//${window.location.host}/ws`;
@@ -24,29 +21,27 @@ class BrowserWebSocketClient {
   private connect(): Promise<void> {
     if (this.socket?.readyState === WebSocket.OPEN) return Promise.resolve();
     if (this.connecting) return this.connecting;
+
     this.connecting = new Promise((resolve, reject) => {
-      const socket = new WebSocket(this.url);
+      const socket = new WebSocket(this.url());
       this.socket = socket;
       socket.onopen = () => { this.connecting = null; resolve(); };
       socket.onerror = () => { this.connecting = null; reject(new Error('无法连接票务服务')); };
       socket.onclose = () => {
         this.connecting = null;
         this.socket = null;
-        const pending = this.requests.splice(0);
-        for (const request of pending) {
+        for (const request of this.pending.splice(0)) {
           clearTimeout(request.timer);
           request.reject(new Error('网络连接已断开'));
         }
       };
       socket.onmessage = event => {
-        const request = this.requests.shift();
+        const request = this.pending.shift();
         if (!request) return;
         clearTimeout(request.timer);
         if (request.timedOut) return;
         try {
-          const response = JSON.parse(String(event.data)) as BackendResponse;
-          if (response.status !== 'OK') request.reject(new Error(toChineseError(response.reason)));
-          else request.resolve(response);
+          request.resolve(JSON.parse(String(event.data)) as BackendResponse);
         } catch {
           request.reject(new Error('服务端响应格式错误'));
         }
@@ -58,41 +53,20 @@ class BrowserWebSocketClient {
   async send<T extends BackendResponse>(payload: object): Promise<T> {
     await this.connect();
     return new Promise<T>((resolve, reject) => {
-      const pending: PendingRequest = {
+      const request: PendingRequest = {
         resolve: response => resolve(response as T),
         reject,
         timedOut: false,
         timer: window.setTimeout(() => {
-          pending.timedOut = true;
+          request.timedOut = true;
           reject(new Error('请求超时，请检查网络连接'));
         }, 15000),
       };
-      this.requests.push(pending);
+      this.pending.push(request);
       this.socket?.send(JSON.stringify(payload));
     });
   }
-
-  async isConnected(): Promise<boolean> {
-    try { await this.connect(); return this.socket?.readyState === WebSocket.OPEN; }
-    catch { return false; }
-  }
 }
 
-const tauriClient = {
-  send<T extends BackendResponse>(payload: object): Promise<T> {
-    return invoke<BackendResponse>('send_request', { payload }).then(resp => {
-      if (resp.status !== 'OK') {
-        throw new Error(toChineseError(resp.reason));
-      }
-      return resp as T;
-    });
-  },
-
-  isConnected(): Promise<boolean> {
-    return invoke<boolean>('check_connection');
-  },
-};
-
-const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-export const wsClient = isTauri ? tauriClient : new BrowserWebSocketClient();
-export default wsClient;
+const transport = new AdminBrowserTransport();
+export const browserSend = <T extends BackendResponse>(payload: object) => transport.send<T>(payload);

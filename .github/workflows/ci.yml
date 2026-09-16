@@ -22,7 +22,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install dependencies
         run: |
@@ -46,3 +46,31 @@ jobs:
 
       - name: Run unit tests
         run: ctest --test-dir build --output-on-failure
+
+  web-build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            clients/user-client/package-lock.json
+            clients/admin-client/package-lock.json
+            websocket-bridge/package-lock.json
+
+      - name: Build user web client
+        working-directory: clients/user-client
+        run: npm ci && npm run build
+
+      - name: Build admin web client
+        working-directory: clients/admin-client
+        run: npm ci && npm run build:web
+
+      - name: Test static server and WebSocket bridge
+        working-directory: websocket-bridge
+        run: npm ci && npm test

@@ -79,7 +79,7 @@ namespace hyperticket
             return current;
         }
 
-        // Overlay DB settings from a .env file located next to the config file.
+        // Overlay deployable settings from a .env file located next to the config file.
         // Precedence: real process env > .env file > existing cfg values.
         void applyEnv(AppConfig &cfg, const std::string &configPath)
         {
@@ -91,6 +91,22 @@ namespace hyperticket
             cfg.db.user = envOverride(dotenv, "DB_USER", cfg.db.user);
             cfg.db.password = envOverride(dotenv, "DB_PASSWORD", cfg.db.password);
             cfg.db.name = envOverride(dotenv, "DB_NAME", cfg.db.name);
+            cfg.db.pool_size = envOverrideInt(dotenv, "DB_POOL_SIZE", cfg.db.pool_size);
+            cfg.server.ip = envOverride(dotenv, "SERVER_IP", cfg.server.ip);
+            cfg.server.port = envOverrideInt(dotenv, "SERVER_PORT", cfg.server.port);
+            cfg.server.io_threads = envOverrideInt(dotenv, "SERVER_IO_THREADS", cfg.server.io_threads);
+            cfg.server.worker_threads = envOverrideInt(dotenv, "SERVER_WORKER_THREADS", cfg.server.worker_threads);
+            cfg.server.max_connections = envOverrideInt(dotenv, "SERVER_MAX_CONNECTIONS", cfg.server.max_connections);
+            cfg.server.max_requests_per_sec = envOverrideInt(
+                dotenv, "SERVER_MAX_REQUESTS_PER_SEC", cfg.server.max_requests_per_sec);
+            cfg.redis.host = envOverride(dotenv, "REDIS_HOST", cfg.redis.host);
+            cfg.redis.port = envOverrideInt(dotenv, "REDIS_PORT", cfg.redis.port);
+            cfg.redis.pool_size = envOverrideInt(dotenv, "REDIS_POOL_SIZE", cfg.redis.pool_size);
+            cfg.redis.session_ttl_minutes = envOverrideInt(
+                dotenv, "REDIS_SESSION_TTL_MINUTES", cfg.redis.session_ttl_minutes);
+            cfg.redis.enabled = envOverrideBool(dotenv, "REDIS_ENABLED", cfg.redis.enabled);
+            cfg.metrics.port = envOverrideInt(dotenv, "METRICS_PORT", cfg.metrics.port);
+            cfg.metrics.enabled = envOverrideBool(dotenv, "METRICS_ENABLED", cfg.metrics.enabled);
             cfg.verification.smtp_host = envOverride(dotenv, "HYPERTICKET_SMTP_HOST", cfg.verification.smtp_host);
             cfg.verification.smtp_port = envOverrideInt(dotenv, "HYPERTICKET_SMTP_PORT", cfg.verification.smtp_port);
             cfg.verification.smtp_username = envOverride(dotenv, "HYPERTICKET_SMTP_USERNAME", cfg.verification.smtp_username);

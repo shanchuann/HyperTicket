@@ -6,7 +6,7 @@
 
 ```text
 用户端 http://localhost:5173 ─┐
-                              ├─ WebSocket ws://localhost:8080
+                              ├─ WebSocket ws://localhost:8080/ws
 管理端 http://localhost:5174 ─┘          │
                                          ▼
                               websocket-bridge (Node.js)
@@ -49,14 +49,14 @@ npm run dev -- --port 5174
 
 | 环境变量 | 默认值 | 说明 |
 |---|---:|---|
-| `WS_PORT` | `8080` | WebSocket 监听端口 |
+| `WEB_PORT` | `8080` | HTTP 与 WebSocket 监听端口（兼容旧 `WS_PORT`） |
 | `TCP_HOST` | `127.0.0.1` | C++ 服务地址 |
 | `TCP_PORT` | `7000` | C++ 服务端口 |
 
 客户端通过 `VITE_WS_URL` 覆盖默认桥接地址：
 
 ```env
-VITE_WS_URL=ws://127.0.0.1:8080
+VITE_WS_URL=ws://127.0.0.1:8080/ws
 ```
 
 桥接层不解释业务协议。它为每个 WebSocket 连接建立对应 TCP 连接，把 JSON 文本补齐换行符后转发，并把后端按行返回的 JSON 发回浏览器。

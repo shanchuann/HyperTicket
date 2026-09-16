@@ -2,7 +2,7 @@ const WebSocket = require('ws');
 
 function req(payload) {
   return new Promise((resolve, reject) => {
-    const ws = new WebSocket('ws://localhost:8080');
+    const ws = new WebSocket('ws://localhost:8080/ws');
     ws.on('open', () => ws.send(JSON.stringify(payload)));
     ws.on('message', (d) => { ws.close(); resolve(JSON.parse(d.toString())); });
     ws.on('error', reject);

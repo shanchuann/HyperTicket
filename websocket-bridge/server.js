@@ -1,23 +1,97 @@
-/**
- * HyperTicket WebSocket Bridge Server
- * 将前端 WebSocket 请求转发到后端 TCP 服务（端口 7000）
- *
- * 前端 <--WebSocket(8080)--> 桥接 <--TCP(7000)--> HyperTicket 后端
- */
-
-const WebSocket = require('ws');
+const fs = require('fs');
+const http = require('http');
 const net = require('net');
+const path = require('path');
+const WebSocket = require('ws');
 
-const WS_PORT = parseInt(process.env.WS_PORT || '8080');
+const WEB_PORT = Number.parseInt(process.env.WEB_PORT || process.env.WS_PORT || '8080', 10);
 const TCP_HOST = process.env.TCP_HOST || '127.0.0.1';
-const TCP_PORT = parseInt(process.env.TCP_PORT || '7000');
+const TCP_PORT = Number.parseInt(process.env.TCP_PORT || '7000', 10);
+const WEB_ROOT = process.env.WEB_ROOT || '';
+const ADMIN_ROOT = process.env.ADMIN_ROOT || '';
 
-const wss = new WebSocket.Server({ port: WS_PORT });
+const mimeTypes = {
+  '.css': 'text/css; charset=utf-8',
+  '.html': 'text/html; charset=utf-8',
+  '.ico': 'image/x-icon',
+  '.jpg': 'image/jpeg',
+  '.jpeg': 'image/jpeg',
+  '.js': 'text/javascript; charset=utf-8',
+  '.json': 'application/json; charset=utf-8',
+  '.png': 'image/png',
+  '.svg': 'image/svg+xml',
+  '.webp': 'image/webp',
+  '.woff': 'font/woff',
+  '.woff2': 'font/woff2',
+};
 
-function clientAddress(req) {
-  const forwarded = req.headers['x-forwarded-for'];
+function sendFile(response, root, requestPath) {
+  if (!root) return false;
+  const normalized = path.posix.normalize(`/${requestPath}`).replace(/^\/+/, '');
+  const candidate = path.resolve(root, normalized);
+  const resolvedRoot = path.resolve(root);
+  if (candidate !== resolvedRoot && !candidate.startsWith(`${resolvedRoot}${path.sep}`)) return false;
+
+  let target = candidate;
+  try {
+    if (!fs.statSync(target).isFile()) return false;
+  } catch (_) {
+    return false;
+  }
+
+  response.writeHead(200, {
+    'Content-Type': mimeTypes[path.extname(target).toLowerCase()] || 'application/octet-stream',
+    'Cache-Control': path.basename(target) === 'index.html'
+      ? 'no-cache'
+      : (requestPath.startsWith('assets/') ? 'public, max-age=31536000, immutable' : 'public, max-age=3600'),
+    'X-Content-Type-Options': 'nosniff',
+  });
+  fs.createReadStream(target).pipe(response);
+  return true;
+}
+
+function serveApplication(response, root, requestPath) {
+  if (sendFile(response, root, requestPath)) return;
+  if (sendFile(response, root, 'index.html')) return;
+  response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+  response.end('Not found');
+}
+
+const server = http.createServer((request, response) => {
+  const requestUrl = new URL(request.url || '/', 'http://localhost');
+  if (requestUrl.pathname === '/healthz') {
+    response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' });
+    response.end(JSON.stringify({ status: 'ok' }));
+    return;
+  }
+
+  let pathname;
+  try {
+    pathname = decodeURIComponent(requestUrl.pathname);
+  } catch (_) {
+    response.writeHead(400, { 'Content-Type': 'text/plain; charset=utf-8' });
+    response.end('Bad request');
+    return;
+  }
+
+  if (pathname === '/admin') {
+    response.writeHead(308, { Location: '/admin/' });
+    response.end();
+    return;
+  }
+  if (pathname.startsWith('/admin/')) {
+    serveApplication(response, ADMIN_ROOT, pathname.slice('/admin/'.length));
+    return;
+  }
+  serveApplication(response, WEB_ROOT, pathname.slice(1));
+});
+
+const wss = new WebSocket.Server({ server, path: '/ws' });
+
+function clientAddress(request) {
+  const forwarded = request.headers['x-forwarded-for'];
   const value = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  return (value ? value.split(',')[0].trim() : req.socket.remoteAddress || '').slice(0, 64);
+  return (value ? value.split(',')[0].trim() : request.socket.remoteAddress || '').slice(0, 64);
 }
 
 function safeLogMessage(raw) {
@@ -35,12 +109,9 @@ function safeLogMessage(raw) {
   }
 }
 
-console.log(`[Bridge] WebSocket server listening on ws://localhost:${WS_PORT}`);
-console.log(`[Bridge] Forwarding to TCP ${TCP_HOST}:${TCP_PORT}`);
-
-wss.on('connection', (ws, req) => {
-  const clientIp = clientAddress(req);
-  console.log(`[Bridge] New WebSocket client: ${clientIp}`);
+wss.on('connection', (ws, request) => {
+  const clientIp = clientAddress(request);
+  console.log(`[Bridge] WebSocket connected: ${clientIp}`);
 
   const tcp = new net.Socket();
   let tcpReady = false;
@@ -48,84 +119,67 @@ wss.on('connection', (ws, req) => {
 
   tcp.connect(TCP_PORT, TCP_HOST, () => {
     tcpReady = true;
-    console.log(`[Bridge] TCP connected to backend`);
-    // 发送队列中积压的消息
-    for (const msg of sendQueue) {
-      tcp.write(msg + '\n');
-    }
+    for (const message of sendQueue) tcp.write(`${message}\n`);
     sendQueue = [];
   });
 
-  // TCP → WebSocket：后端响应转发给浏览器
-  let tcpBuf = '';
-  tcp.on('data', (chunk) => {
-    tcpBuf += chunk.toString();
-    const lines = tcpBuf.split('\n');
-    tcpBuf = lines.pop(); // 保留未结束的行
+  let tcpBuffer = '';
+  tcp.on('data', chunk => {
+    tcpBuffer += chunk.toString();
+    const lines = tcpBuffer.split('\n');
+    tcpBuffer = lines.pop();
     for (const line of lines) {
-      const trimmed = line.trim();
-      if (trimmed && ws.readyState === WebSocket.OPEN) {
-        console.log(`[Bridge] Backend → Frontend: ${safeLogMessage(trimmed)}`);
-        ws.send(trimmed);
-      }
+      const message = line.trim();
+      if (message && ws.readyState === WebSocket.OPEN) ws.send(message);
     }
   });
 
-  tcp.on('error', (err) => {
-    console.error(`[Bridge] TCP error: ${err.message}`);
+  tcp.on('error', error => {
+    console.error(`[Bridge] TCP error: ${error.message}`);
     if (ws.readyState === WebSocket.OPEN) {
-      // 必须与后端协议一致（status/reason）——前端 client.ts 只识别这两个字段，
-      // 否则 reason 为 undefined，用户只能看到笼统的"请求失败"
       ws.send(JSON.stringify({ status: 'ERR', reason: '票务服务暂时不可用，请稍后重试' }));
       ws.close();
     }
   });
-
   tcp.on('close', () => {
-    console.log(`[Bridge] TCP connection closed`);
     if (ws.readyState === WebSocket.OPEN) ws.close();
   });
 
-  // WebSocket → TCP：前端消息转发给后端
-  ws.on('message', (data) => {
-    const msg = data.toString().trim();
-    if (!msg) return;
-    let forwardedMessage;
+  ws.on('message', data => {
+    const raw = data.toString().trim();
+    if (!raw) return;
+    let message;
     try {
-      const payload = JSON.parse(msg);
-      // The bridge owns this internal field; any browser-provided value is overwritten.
+      const payload = JSON.parse(raw);
       payload._gateway_client_ip = clientIp;
-      forwardedMessage = JSON.stringify(payload);
+      message = JSON.stringify(payload);
     } catch (_) {
       ws.send(JSON.stringify({ status: 'ERR', reason: 'JSON_PARSE' }));
       return;
     }
-    console.log(`[Bridge] Frontend → Backend: ${safeLogMessage(forwardedMessage)}`);
-    if (tcpReady) {
-      tcp.write(forwardedMessage + '\n');
-    } else {
-      sendQueue.push(forwardedMessage);
-    }
+    console.log(`[Bridge] Frontend -> Backend: ${safeLogMessage(message)}`);
+    if (tcpReady) tcp.write(`${message}\n`);
+    else sendQueue.push(message);
   });
 
-  ws.on('close', () => {
-    console.log(`[Bridge] WebSocket client disconnected: ${clientIp}`);
-    tcp.destroy();
-  });
-
-  ws.on('error', (err) => {
-    console.error(`[Bridge] WebSocket error: ${err.message}`);
+  ws.on('close', () => tcp.destroy());
+  ws.on('error', error => {
+    console.error(`[Bridge] WebSocket error: ${error.message}`);
     tcp.destroy();
   });
 });
 
-wss.on('error', (err) => {
-  console.error(`[Bridge] Server error: ${err.message}`);
-  process.exit(1);
+wss.on('error', error => {
+  console.error(`[Bridge] Server error: ${error.message}`);
 });
 
-// 优雅退出
-process.on('SIGINT', () => {
-  console.log('\n[Bridge] Shutting down...');
-  wss.close(() => process.exit(0));
+server.listen(WEB_PORT, '0.0.0.0', () => {
+  console.log(`[Web] HTTP and WebSocket server listening on 0.0.0.0:${WEB_PORT}`);
+  console.log(`[Bridge] Forwarding /ws to ${TCP_HOST}:${TCP_PORT}`);
 });
+
+function shutdown() {
+  wss.close(() => server.close(() => process.exit(0)));
+}
+process.on('SIGINT', shutdown);
+process.on('SIGTERM', shutdown);

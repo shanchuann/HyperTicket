@@ -139,6 +139,11 @@ target_include_directories(test_protocol PRIVATE backend/Common/include)
 target_link_libraries(test_protocol PRIVATE ${JSONCPP_LIB} Threads::Threads)
 add_test(NAME test_protocol COMMAND $<TARGET_FILE:test_protocol>)
 
+add_executable(test_app_config tests/test_app_config.cpp ${COMMON_SRC})
+target_include_directories(test_app_config PRIVATE backend/Common/include)
+target_link_libraries(test_app_config PRIVATE ${JSONCPP_LIB})
+add_test(NAME test_app_config COMMAND $<TARGET_FILE:test_app_config>)
+
 add_executable(test_redis_session
 	tests/test_redis_session.cpp
 	backend/Server/src/RedisSessionManager.cpp

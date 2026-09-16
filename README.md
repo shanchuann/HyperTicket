@@ -205,7 +205,7 @@ cd clients/user-client; npm run build
 cd ../admin-client; npm run build
 ```
 
-当前回归基线为：CTest `11/11`、模拟支付端到端测试通过、两端 React 生产构建通过，并完成桌面与移动浏览器页面检查。GitHub Actions 会在 `main` 的 push 和 pull request 上构建后端并运行 CTest，Redis 由 CI 服务容器提供。
+当前回归基线为：CTest `12/12`、模拟支付端到端测试通过、两端 React 生产构建通过，并完成桌面与移动浏览器页面检查。GitHub Actions 会在 `main` 的 push 和 pull request 上构建后端并运行 CTest，Redis 由 CI 服务容器提供。
 
 ## 目录结构
 
@@ -236,6 +236,7 @@ HyperTicket/
 - [支付 Provider 与占位渠道](docs/PAYMENT_PROVIDERS.md)
 - [Redis 高并发库存](docs/REDIS_HIGH_CONCURRENCY.md)
 - [WebSocket 集成](docs/WEBSOCKET_INTEGRATION.md)
+- [自动发布与部署工作流](docs/RELEASE_WORKFLOW.md)
 - [后端差距与下一阶段](docs/BACKEND_GAP_ANALYSIS.md)
 - [v2 历史版本说明](docs/V2_FEATURES.md)
 

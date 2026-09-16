@@ -1,0 +1,74 @@
+name: hyperticket
+
+services:
+  backend:
+    image: ghcr.io/${GHCR_OWNER:-shanchuann}/hyperticket-backend:${IMAGE_TAG:-latest}
+    pull_policy: always
+    restart: unless-stopped
+    ports:
+      - "${BACKEND_PORT:-7000}:7000"
+    environment:
+      SERVER_IP: 0.0.0.0
+      SERVER_PORT: 7000
+      DB_HOST: ${DB_HOST:?DB_HOST is required}
+      DB_PORT: ${DB_PORT:-3306}
+      DB_USER: ${DB_USER:?DB_USER is required}
+      DB_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      DB_NAME: ${DB_NAME:-hyperticket}
+      DB_POOL_SIZE: ${DB_POOL_SIZE:-8}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_ENABLED: "true"
+      HYPERTICKET_SMTP_HOST: ${HYPERTICKET_SMTP_HOST:-}
+      HYPERTICKET_SMTP_PORT: ${HYPERTICKET_SMTP_PORT:-465}
+      HYPERTICKET_SMTP_USERNAME: ${HYPERTICKET_SMTP_USERNAME:-}
+      HYPERTICKET_SMTP_AUTH_CODE: ${HYPERTICKET_SMTP_AUTH_CODE:-}
+      HYPERTICKET_SMTP_FROM: ${HYPERTICKET_SMTP_FROM:-}
+      HYPERTICKET_SMTP_FROM_NAME: ${HYPERTICKET_SMTP_FROM_NAME:-HyperTicket}
+      HYPERTICKET_SMTP_USE_TLS: ${HYPERTICKET_SMTP_USE_TLS:-true}
+      HYPERTICKET_PAYMENT_SIMULATED_CHANNELS_ENABLED: ${HYPERTICKET_PAYMENT_SIMULATED_CHANNELS_ENABLED:-false}
+      HYPERTICKET_PAYMENT_SIMULATED_WEBHOOK_SECRET: ${HYPERTICKET_PAYMENT_SIMULATED_WEBHOOK_SECRET:-}
+    volumes:
+      - backend-logs:/app/logs
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks:
+      - hyperticket
+
+  web:
+    image: ghcr.io/${GHCR_OWNER:-shanchuann}/hyperticket-web:${IMAGE_TAG:-latest}
+    pull_policy: always
+    restart: unless-stopped
+    ports:
+      - "${WEB_PORT:-8080}:8080"
+    environment:
+      WEB_PORT: 8080
+      TCP_HOST: backend
+      TCP_PORT: 7000
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - hyperticket
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - hyperticket
+
+networks:
+  hyperticket:
+
+volumes:
+  backend-logs:
+  redis-data:

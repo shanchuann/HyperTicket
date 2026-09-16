@@ -3,6 +3,11 @@
 # 构建产物
 build/
 bin/
+node_modules/
+**/node_modules/
+clients/*/dist/
+clients/*/src-tauri/target/
+clients/*/src-tauri/gen/
 *.o
 *.a
 *.so
@@ -30,13 +35,9 @@ logs/
 !README.md
 docs/
 
-# 测试
-tests/
-
-# Docker
-Dockerfile
+# Docker and deployment files are not needed inside build contexts.
 docker-compose.yml
-.dockerignore
+deploy/
 
 # 其他
 .DS_Store

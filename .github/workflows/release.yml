@@ -1,0 +1,248 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: release-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  prepare:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    outputs:
+      publish: ${{ steps.release.outputs.publish }}
+      release_tag: ${{ steps.release.outputs.release_tag }}
+      sha_tag: ${{ steps.release.outputs.sha_tag }}
+      subject: ${{ steps.release.outputs.subject }}
+    steps:
+      - name: Evaluate commit prefix
+        id: release
+        uses: actions/github-script@v8
+        with:
+          script: |
+            const sha = context.payload.workflow_run.head_sha;
+            const { data } = await github.rest.repos.getCommit({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: sha,
+            });
+            const subject = data.commit.message.split(/\r?\n/, 1)[0];
+            const publish = /^(fix|change|feat)(?:\([^)]*\))?!?(?::|\s)/i.test(subject);
+            core.info(`Commit subject: ${subject}`);
+            core.info(`Release enabled: ${publish}`);
+            core.setOutput('publish', String(publish));
+            core.setOutput('release_tag', `v0.0.${context.runNumber}`);
+            core.setOutput('sha_tag', `sha-${sha.slice(0, 12)}`);
+            core.setOutput('subject', subject);
+
+  images:
+    needs: prepare
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: backend
+            dockerfile: Dockerfile
+          - name: web
+            dockerfile: Dockerfile.web
+    steps:
+      - name: Checkout release commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ${{ matrix.name }} image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          push: true
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/hyperticket-${{ matrix.name }}:latest
+            ghcr.io/${{ github.repository_owner }}/hyperticket-${{ matrix.name }}:${{ needs.prepare.outputs.release_tag }}
+            ghcr.io/${{ github.repository_owner }}/hyperticket-${{ matrix.name }}:${{ needs.prepare.outputs.sha_tag }}
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.event.workflow_run.head_sha }}
+            org.opencontainers.image.version=${{ needs.prepare.outputs.release_tag }}
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  draft-release:
+    needs: [prepare, images]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+      RELEASE_SHA: ${{ github.event.workflow_run.head_sha }}
+      RELEASE_SUBJECT: ${{ needs.prepare.outputs.subject }}
+    steps:
+      - name: Create draft release
+        shell: bash
+        run: |
+          cat > release-notes.md <<EOF
+          ## HyperTicket ${RELEASE_TAG}
+
+          - Commit: \`${RELEASE_SHA}\`
+          - Change: ${RELEASE_SUBJECT}
+          - Web image: \`ghcr.io/${GITHUB_REPOSITORY_OWNER}/hyperticket-web:${{ needs.prepare.outputs.sha_tag }}\`
+          - Backend image: \`ghcr.io/${GITHUB_REPOSITORY_OWNER}/hyperticket-backend:${{ needs.prepare.outputs.sha_tag }}\`
+
+          The Windows user and administrator installers are attached below. Payment channels remain simulated placeholders.
+          EOF
+          if gh release view "$RELEASE_TAG" --repo "$GH_REPO" >/dev/null 2>&1; then
+            is_draft="$(gh release view "$RELEASE_TAG" --repo "$GH_REPO" --json isDraft --jq .isDraft)"
+            test "$is_draft" = "true" || { echo "Release already published" >&2; exit 1; }
+            gh release edit "$RELEASE_TAG" --repo "$GH_REPO" \
+              --target "$RELEASE_SHA" --title "HyperTicket $RELEASE_TAG" \
+              --notes-file release-notes.md
+          else
+            gh release create "$RELEASE_TAG" \
+              --repo "$GH_REPO" \
+              --target "$RELEASE_SHA" \
+              --title "HyperTicket $RELEASE_TAG" \
+              --notes-file release-notes.md \
+              --draft
+          fi
+
+  windows-clients:
+    needs: [prepare, draft-release]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: user
+            directory: clients/user-client
+          - name: admin
+            directory: clients/admin-client
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+    steps:
+      - name: Checkout release commit
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: ${{ matrix.directory }}/package-lock.json
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: ${{ matrix.directory }}/src-tauri
+          key: ${{ matrix.name }}
+
+      - name: Install dependencies
+        working-directory: ${{ matrix.directory }}
+        run: npm ci
+
+      - name: Build Tauri bundles
+        working-directory: ${{ matrix.directory }}
+        run: npm run tauri build
+
+      - name: Upload installers to draft release
+        shell: pwsh
+        run: |
+          $assets = Get-ChildItem -Path "${{ matrix.directory }}/src-tauri/target/release/bundle" -Recurse -File |
+            Where-Object { $_.Extension -in '.exe', '.msi' }
+          if (-not $assets) { throw 'No Windows installer was produced.' }
+          foreach ($asset in $assets) {
+            gh release upload $env:RELEASE_TAG $asset.FullName --repo $env:GH_REPO --clobber
+          }
+
+  publish-release:
+    needs: [prepare, windows-clients]
+    if: needs.prepare.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_TAG: ${{ needs.prepare.outputs.release_tag }}
+    steps:
+      - name: Publish completed release
+        run: gh release edit "$RELEASE_TAG" --repo "$GH_REPO" --draft=false --latest
+
+  deploy:
+    needs: [prepare, publish-release]
+    if: needs.prepare.outputs.publish == 'true' && vars.AUTO_DEPLOY_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    env:
+      DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+      DEPLOY_PORT: ${{ secrets.DEPLOY_PORT }}
+      DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+      DEPLOY_KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+      DEPLOY_PATH: ${{ secrets.DEPLOY_PATH }}
+      IMAGE_TAG: ${{ needs.prepare.outputs.sha_tag }}
+    steps:
+      - name: Validate deployment settings
+        shell: bash
+        run: |
+          : "${DEPLOY_HOST:?DEPLOY_HOST is required}"
+          : "${DEPLOY_USER:?DEPLOY_USER is required}"
+          : "${DEPLOY_SSH_KEY:?DEPLOY_SSH_KEY is required}"
+          : "${DEPLOY_KNOWN_HOSTS:?DEPLOY_KNOWN_HOSTS is required}"
+          : "${DEPLOY_PATH:?DEPLOY_PATH is required}"
+
+      - name: Configure SSH
+        shell: bash
+        run: |
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$DEPLOY_SSH_KEY" > ~/.ssh/hyperticket_deploy
+          chmod 600 ~/.ssh/hyperticket_deploy
+          printf '%s\n' "$DEPLOY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Pull images and restart services
+        shell: bash
+        run: |
+          port="${DEPLOY_PORT:-22}"
+          ssh -i ~/.ssh/hyperticket_deploy -p "$port" \
+            -o BatchMode=yes -o StrictHostKeyChecking=yes \
+            "$DEPLOY_USER@$DEPLOY_HOST" bash -s -- "$DEPLOY_PATH" "$IMAGE_TAG" <<'REMOTE'
+          set -euo pipefail
+          deploy_path="$1"
+          image_tag="$2"
+          cd "$deploy_path"
+          git pull --ff-only origin main
+          IMAGE_TAG="$image_tag" docker compose --env-file deploy/.env.production \
+            -f deploy/compose.production.yml pull
+          IMAGE_TAG="$image_tag" docker compose --env-file deploy/.env.production \
+            -f deploy/compose.production.yml up -d --remove-orphans
+          IMAGE_TAG="$image_tag" docker compose --env-file deploy/.env.production \
+            -f deploy/compose.production.yml ps
+          REMOTE

@@ -80,7 +80,7 @@ ctest --test-dir build --output-on-failure
 ./bin/ser
 ```
 
-CTest 当前包含 11 个单元/集成测试；Redis Session、库存和订单队列测试需要可访问的 Redis。GitHub Actions 使用 `redis:7-alpine` 服务容器。
+CTest 当前包含 12 个单元/集成测试；Redis Session、库存和订单队列测试需要可访问的 Redis。GitHub Actions 使用 `redis:7-alpine` 服务容器。
 
 ## 相关文档
 

@@ -3,6 +3,10 @@
 export const OperationType = {
   LOGIN: 1, REGISTER: 2, EXIT: 3, VIEW: 4, ORDER: 5,
   VIEW_MY: 6, CANCEL: 7, DELETE_ORDER: 16, VIEW_SEATS: 17,
+  VERIFICATION_REQUEST: 26, VERIFICATION_VERIFY: 27,
+  PASSWORD_RESET_REQUEST: 28, PASSWORD_RESET_VERIFY: 29,
+  PASSWORD_RESET_CONFIRM: 30, ACCOUNT_SECURITY_STATUS: 31,
+  CONTACT_VERIFICATION_REQUEST: 32, CONTACT_VERIFICATION_CONFIRM: 33,
 } as const;
 
 export interface BackendResponse {
@@ -14,6 +18,35 @@ export interface BackendResponse {
 export interface AuthBackendResponse extends BackendResponse {
   token?: string;
   username?: string;
+  email?: string;
+  email_verified?: boolean;
+  phone_verified?: boolean;
+}
+
+export type VerificationChannel = 'EMAIL' | 'SMS';
+
+export interface ChallengeResponse extends BackendResponse {
+  challenge_id: string;
+  expires_in_seconds: number;
+  mock_code?: string;
+  channel?: VerificationChannel;
+}
+
+export interface VerificationGrantResponse extends BackendResponse {
+  verification_token: string;
+  expires_in_seconds: number;
+}
+
+export interface PasswordResetGrantResponse extends BackendResponse {
+  reset_token: string;
+  expires_in_seconds: number;
+}
+
+export interface AccountSecurityStatus extends BackendResponse {
+  usertel: string;
+  email: string;
+  email_verified: boolean;
+  phone_verified: boolean;
 }
 
 // ── Tickets ──────────────────────────────────────────────────────────────────
@@ -128,6 +161,9 @@ export interface User {
   tel: string;
   username: string;
   token: string;
+  email?: string;
+  emailVerified?: boolean;
+  phoneVerified?: boolean;
 }
 
 export type Theme = 'light' | 'dark';

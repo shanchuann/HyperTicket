@@ -10,6 +10,26 @@ type Callback = {
   timedOut: boolean;  // 超时标记，不从队列移除（保持响应顺序对齐）
 };
 
+const SENSITIVE_FIELDS = new Set([
+  'passward', 'password', 'new_password', 'token', 'admin_token',
+  'reset_token', 'verification_token', 'code',
+]);
+
+function safePayload(payload: object): string {
+  const redacted = Object.fromEntries(
+    Object.entries(payload).map(([key, value]) => [key, SENSITIVE_FIELDS.has(key) ? '[REDACTED]' : value]),
+  );
+  return JSON.stringify(redacted).slice(0, 300);
+}
+
+function safeResponseText(raw: string): string {
+  try {
+    return safePayload(JSON.parse(raw) as Record<string, unknown>);
+  } catch {
+    return '[non-json response]';
+  }
+}
+
 class WebSocketClient {
   private ws: WebSocket | null = null;
   private readonly url: string;
@@ -53,7 +73,7 @@ class WebSocketClient {
 
       ws.onmessage = (event) => {
         const text = event.data as string;
-        console.log('[WS] Received:', text.substring(0, 150));
+        console.log('[WS] Received:', safeResponseText(text));
 
         // 按顺序消费队列；跳过已超时的槽位（其 reject 已触发），继续消费直到找到有效回调
         while (this.queue.length > 0 && this.queue[0].timedOut) {
@@ -165,7 +185,7 @@ class WebSocketClient {
             level: 'ERROR',
             source: 'ws-client',
             message: '请求超时（15s 未收到后端响应）',
-            context: { payload: JSON.stringify(payload).slice(0, 200), wsState: this.ws?.readyState ?? -1 },
+            context: { payload: safePayload(payload), wsState: this.ws?.readyState ?? -1 },
           });
           reject(new Error('请求超时，请检查网络连接'));
         }, 15000),

@@ -18,6 +18,28 @@
   margin-bottom: var(--space-8);
 }
 
+.auth-steps {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-2);
+  margin: calc(var(--space-5) * -1) 0 var(--space-6);
+}
+
+.auth-steps-three { grid-template-columns: repeat(3, 1fr); }
+
+.auth-steps span {
+  padding-bottom: var(--space-2);
+  border-bottom: 2px solid var(--color-divider);
+  color: var(--color-text-tertiary);
+  font-size: var(--text-body-sm);
+}
+
+.auth-steps span.active {
+  border-bottom-color: var(--color-primary);
+  color: var(--color-primary);
+  font-weight: var(--weight-medium);
+}
+
 /* Error Banner */
 .auth-error {
   background: var(--color-error);
@@ -115,6 +137,96 @@
   font-size: var(--text-body-sm);
   color: var(--color-error);
 }
+
+.form-help {
+  color: var(--color-text-secondary);
+  font-size: var(--text-body-sm);
+  line-height: var(--leading-normal);
+}
+
+.verification-channel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  background: var(--color-surface-elevated);
+  padding: var(--space-1);
+  gap: var(--space-1);
+}
+
+.verification-channel button {
+  min-height: 42px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  font: inherit;
+  cursor: pointer;
+}
+
+.verification-channel button:hover { color: var(--color-text-primary); }
+.verification-channel button.active { background: var(--color-surface); color: var(--color-primary); font-weight: var(--weight-medium); }
+.verification-channel.compact { margin-bottom: var(--space-1); }
+
+.verification-stage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  color: var(--color-primary);
+}
+
+.verification-stage h2 { color: var(--color-text-primary); font-size: var(--text-h3); }
+.verification-stage p { color: var(--color-text-secondary); font-size: var(--text-body-sm); }
+
+.verification-code {
+  font-family: var(--font-mono);
+  font-size: var(--text-h3);
+  letter-spacing: 0.25em;
+  font-variant-numeric: tabular-nums;
+}
+
+.mock-code {
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface-elevated);
+  color: var(--color-text-secondary);
+  font-size: var(--text-body-sm);
+}
+
+.mock-code strong { color: var(--color-text-primary); font-family: var(--font-mono); }
+
+.verification-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.form-link-button {
+  border: 0;
+  padding: var(--space-1) 0;
+  background: transparent;
+  color: var(--color-primary);
+  font: inherit;
+  font-size: var(--text-body-sm);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+
+.form-link-button:hover:not(:disabled) { text-decoration: underline; }
+.form-link-button:disabled { color: var(--color-text-disabled); cursor: not-allowed; }
+.form-link-button.align-start { align-self: flex-start; }
+
+.auth-complete {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-4);
+  color: var(--color-success);
+}
+
+.auth-complete .auth-form-title,
+.auth-complete .auth-form-subtitle { margin: 0; }
 
 /* 隐藏浏览器原生密码输入框的眼睛图标（Edge/Chrome/Safari），避免与自定义按钮重叠 */
 input[type="password"]::-ms-reveal,

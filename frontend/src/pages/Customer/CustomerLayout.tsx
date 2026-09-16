@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react';
 import { Outlet, Link, useNavigate, useLocation } from 'react-router-dom';
-import { Sun, Moon, Ticket, ShoppingBag, Heart, LogOut, Menu, X } from 'lucide-react';
+import { Sun, Moon, Ticket, ShoppingBag, Heart, LogOut, Menu, X, ShieldCheck } from 'lucide-react';
 import { useTheme } from '../../hooks/useTheme';
 import { useAuth } from '../../hooks/useAuth';
 import ConnectionStatus from '../../components/ConnectionStatus';
+import { authApi } from '../../api/auth';
 import './CustomerLayout.css';
 
 const CustomerLayout = () => {
@@ -22,7 +23,9 @@ const CustomerLayout = () => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const token = localStorage.getItem('token');
+    if (token) await authApi.logout(token);
     logout();
     navigate('/auth/login');
   };
@@ -31,6 +34,7 @@ const CustomerLayout = () => {
     { path: '/customer', label: '票务浏览', icon: Ticket },
     { path: '/customer/favorites', label: '我的想看', icon: Heart },
     { path: '/customer/orders', label: '我的订单', icon: ShoppingBag },
+    { path: '/customer/security', label: '账号安全', icon: ShieldCheck },
   ];
 
   const isActive = (path: string) => {

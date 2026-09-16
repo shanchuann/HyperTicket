@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { Eye, EyeOff, Loader2, LogIn } from 'lucide-react';
 import { authApi } from '../../api/auth';
 import { toChineseError } from '../../api/errors';
@@ -9,6 +9,7 @@ import './AuthForms.css';
 
 const Login = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { login } = useAuth();
   const [formData, setFormData] = useState({
     tel: '',
@@ -71,7 +72,11 @@ const Login = () => {
 
   return (
     <div className="auth-form-container">
-      <Toast message={authError} tone="error" onClose={() => setAuthError('')} />
+      <Toast
+        message={authError || (location.state?.passwordReset ? '密码已重置，请使用新密码登录' : '')}
+        tone={authError ? 'error' : 'success'}
+        onClose={() => { setAuthError(''); if (location.state) navigate(location.pathname, { replace: true }); }}
+      />
       <h1 className="auth-form-title">欢迎回来</h1>
       <p className="auth-form-subtitle">登录您的 HyperTicket 账号</p>
 

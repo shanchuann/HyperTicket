@@ -1,7 +1,7 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import Landing from './pages/Landing';
-import { AuthLayout, Login, Register } from './pages/Auth';
-import { CustomerLayout, TicketList, OrderList, FavoriteList } from './pages/Customer';
+import { AuthLayout, ForgotPassword, Login, Register } from './pages/Auth';
+import { AccountSecurity, CustomerLayout, TicketList, OrderList, FavoriteList } from './pages/Customer';
 import { AdminLayout, Dashboard, TicketManage, UserManage } from './pages/Admin';
 import AdminLogin from './pages/Admin/AdminLogin';
 import VerifyOrder from './pages/VerifyOrder';
@@ -20,6 +20,7 @@ function App() {
             <Route index element={<Navigate to="login" replace />} />
             <Route path="login" element={<Login />} />
             <Route path="register" element={<Register />} />
+            <Route path="forgot-password" element={<ForgotPassword />} />
           </Route>
           <Route path="/admin/login" element={<AdminLogin />} />
           <Route path="/verify" element={<VerifyOrder />} />
@@ -27,6 +28,7 @@ function App() {
             <Route index element={<TicketList />} />
             <Route path="favorites" element={<FavoriteList />} />
             <Route path="orders" element={<OrderList />} />
+            <Route path="security" element={<AccountSecurity />} />
           </Route>
           <Route path="/admin" element={<AdminProtectedRoute><AdminLayout /></AdminProtectedRoute>}>
             <Route index element={<Dashboard />} />

@@ -1,7 +1,7 @@
 // HyperTicket API 类型定义（与后端真实协议对齐）
 
 // 操作类型
-export type OperationType = 1 | 2 | 3 | 4 | 5 | 6 | 7;
+export type OperationType = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 26 | 27 | 28 | 29 | 30 | 31 | 32 | 33;
 
 export const OperationType = {
   LOGIN: 1 as 1,
@@ -11,6 +11,14 @@ export const OperationType = {
   ORDER: 5 as 5,
   VIEW_MY: 6 as 6,
   CANCEL: 7 as 7,
+  VERIFICATION_REQUEST: 26 as 26,
+  VERIFICATION_VERIFY: 27 as 27,
+  PASSWORD_RESET_REQUEST: 28 as 28,
+  PASSWORD_RESET_VERIFY: 29 as 29,
+  PASSWORD_RESET_CONFIRM: 30 as 30,
+  ACCOUNT_SECURITY_STATUS: 31 as 31,
+  CONTACT_VERIFICATION_REQUEST: 32 as 32,
+  CONTACT_VERIFICATION_CONFIRM: 33 as 33,
 };
 
 // 基础响应（后端统一用 status: "OK" | "ERR"）
@@ -32,11 +40,40 @@ export interface RegisterRequest {
   usertel: string;
   passward: string;
   username: string;
+  verification_token: string;
 }
 
 export interface AuthBackendResponse extends BackendResponse {
   token?: string;
   username?: string;
+  email?: string;
+  email_verified?: boolean;
+  phone_verified?: boolean;
+}
+
+export type VerificationChannel = 'EMAIL' | 'SMS';
+
+export interface ChallengeResponse extends BackendResponse {
+  challenge_id: string;
+  expires_in_seconds: number;
+  mock_code?: string;
+}
+
+export interface VerificationGrantResponse extends BackendResponse {
+  verification_token: string;
+  expires_in_seconds: number;
+}
+
+export interface ResetGrantResponse extends BackendResponse {
+  reset_token: string;
+  expires_in_seconds: number;
+}
+
+export interface SecurityStatusResponse extends BackendResponse {
+  usertel: string;
+  email: string;
+  email_verified: boolean;
+  phone_verified: boolean;
 }
 
 // 票务（后端字段）

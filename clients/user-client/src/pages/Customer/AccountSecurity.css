@@ -1,0 +1,22 @@
+.security-page { max-width: 1080px; margin: 0 auto; padding: var(--space-8) var(--space-6) var(--space-12); }
+.security-page-head { display: flex; justify-content: space-between; align-items: flex-end; gap: var(--space-6); margin-bottom: var(--space-8); }
+.security-page-head h1 { font-size: var(--text-h1); margin: var(--space-2) 0; }
+.security-page-head p { color: var(--color-text-secondary); }
+.security-kicker { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--color-accent); font-size: var(--text-body-sm); font-weight: var(--weight-semibold); }
+.security-refresh { display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-4); border: 1px solid var(--color-border); background: transparent; color: var(--color-text-primary); cursor: pointer; }
+.security-status { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); background: var(--color-surface); margin-bottom: var(--space-6); }
+.security-status > div { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: var(--space-4); padding: var(--space-5); border-bottom: 1px solid var(--color-divider); }
+.security-status > div:first-child { border-right: 1px solid var(--color-divider); }
+.security-status span { width: 38px; height: 38px; display: grid; place-items: center; background: var(--color-bg); }
+.security-status .verified { color: var(--color-success); }
+.security-status .pending { color: var(--color-text-tertiary); }
+.security-status div div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.security-status small { color: var(--color-text-secondary); overflow: hidden; text-overflow: ellipsis; }
+.security-status strong { font-size: var(--text-body-sm); color: var(--color-text-secondary); }
+.security-form-section { display: grid; grid-template-columns: minmax(220px, .7fr) minmax(320px, 1fr); gap: var(--space-8); padding-top: var(--space-6); }
+.security-form-copy { padding-top: var(--space-2); }
+.security-form-copy > svg { color: var(--color-accent); margin-bottom: var(--space-4); }
+.security-form-copy h2 { font-size: var(--text-h2); margin-bottom: var(--space-2); }
+.security-form-copy p { color: var(--color-text-secondary); max-width: 32ch; }
+.security-form { display: flex; flex-direction: column; gap: var(--space-5); }
+@media (max-width: 767px) { .security-page { padding: var(--space-6) var(--space-4); } .security-page-head { align-items: flex-start; flex-direction: column; } .security-status, .security-form-section { grid-template-columns: 1fr; } .security-status > div:first-child { border-right: 0; } }

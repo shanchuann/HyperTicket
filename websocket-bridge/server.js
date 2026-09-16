@@ -23,7 +23,10 @@ function clientAddress(req) {
 function safeLogMessage(raw) {
   try {
     const value = JSON.parse(raw);
-    for (const key of ['passward', 'password', 'new_password', 'token', 'admin_token', 'reset_token']) {
+    for (const key of [
+      'passward', 'password', 'new_password', 'token', 'admin_token',
+      'reset_token', 'verification_token', 'code',
+    ]) {
       if (Object.prototype.hasOwnProperty.call(value, key)) value[key] = '[REDACTED]';
     }
     return JSON.stringify(value).slice(0, 240);

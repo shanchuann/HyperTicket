@@ -48,7 +48,14 @@ const Login = () => {
     try {
       const response = await authApi.login(formData.tel, formData.password);
       const token = response.token || '';
-      login({ tel: formData.tel, username: response.username || '用户', token }, token);
+      login({
+        tel: formData.tel,
+        username: response.username || '用户',
+        token,
+        email: response.email,
+        emailVerified: response.email_verified,
+        phoneVerified: response.phone_verified,
+      }, token);
       navigate('/customer');
     } catch (error) {
       setAuthError(catchError(error, '手机号或密码错误，请重试'));

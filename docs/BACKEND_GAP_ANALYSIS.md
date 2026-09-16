@@ -14,6 +14,10 @@ does not claim parity with any specific company.
 - Retryable refunds with bounded exponential backoff.
 - Order soft deletion that preserves payment, refund, and audit history.
 - Redis-backed CI integration tests with an explicit health check.
+- v10 activity, venue, hall, session, ticket-tier, and independent seat model.
+- Multi-seat orders with attendee associations and rollback on persistence failure.
+- User profiles, favorites, browsing history, common attendees, and electronic tickets.
+- Sale-reminder subscriptions, scheduled email delivery, and reminder audit records.
 
 ## P0 before public sale traffic
 
@@ -50,8 +54,9 @@ does not claim parity with any specific company.
    mismatch Prometheus metrics with bounded label cardinality.
 3. Add transactional outbox events for notifications, ticket issuance, and
    downstream analytics instead of coupling them to request transactions.
-4. Add event-level purchase limits, attendee identity rules, transfer policy,
-   ticket issuance/QR rotation, and check-in idempotency.
+4. Add event-level purchase limits and stronger attendee identity rules. Common
+   attendees and seat associations exist; transfer policy, QR rotation, and
+   check-in idempotency are still required.
 5. Add MySQL backup/restore drills, Redis failover testing, schema migration CI,
    and restart recovery tests for every scheduled job.
 
@@ -63,5 +68,6 @@ does not claim parity with any specific company.
 - Multi-region reads, disaster recovery targets, capacity planning, and sale-day runbooks.
 
 The next recommended backend milestone is the P0 inventory reconciliation and
-operator exception queue. It improves correctness without requiring payment
-merchant qualifications or external platform contracts.
+operator exception queue, followed by order-state transition enforcement. These
+improve correctness without requiring payment merchant qualifications or
+external platform contracts.

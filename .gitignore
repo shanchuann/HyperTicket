@@ -60,4 +60,6 @@ clients/user-client/dist/
 .claude/
 skills-lock.json
 backups/
-artifacts/
+artifacts/*
+!artifacts/catalog-desktop.png
+!artifacts/catalog-mobile.png

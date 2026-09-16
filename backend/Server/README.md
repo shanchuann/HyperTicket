@@ -1,286 +1,92 @@
-# Server 服务端
+# HyperTicket C++ 服务端
 
-HyperTicket 服务端程序，基于自研 Inet Reactor 网络库实现高并发网络通信。
+服务端基于 C++17，使用 epoll Reactor 网络层、固定业务线程池、MySQL 预处理语句、Redis Session/缓存/Streams 和定时任务。默认监听 TCP `127.0.0.1:7000`，请求和响应均为以换行分隔的 JSON。
 
-## 技术架构
+## 请求链路
 
-- **网络层**: Inet epoll Reactor，one loop per thread，不依赖 libevent
-- **并发模型**: 多 IO 线程 + FixedThreadPool 业务线程池
-- **数据库**: MySQL 8.0，使用 SqlConnPool 连接池
-- **日志**: ChronoLite 异步日志，双缓冲设计
-- **定时任务**: ScheduledThreadPool，用于会话清理、票务巡检
-- **协议**: jsoncpp 处理 JSON，按换行符分隔消息
-- **语言**: C++17，命名空间 hyperticket / shanchuan
-
-## 可选功能
-
-### 1. Redis Session Manager
-
-将 Session 持久化到 Redis，支持多实例水平扩展。
-
-**配置启用**:
-```json
-{
-  "redis": {
-    "host": "127.0.0.1",
-    "port": 6379,
-    "enabled": true
-  }
-}
+```text
+TcpServer -> 换行拆包 -> JSON 校验 -> 连接限流
+          -> TicketService 协议分发 -> Repository / Redis
+          -> JSON 响应
 ```
 
-**实现文件**:
-- `include/RedisSessionManager.hpp`
-- `src/RedisSessionManager.cpp`
+- Inet：one loop per thread 的网络层。
+- FixedThreadPool：隔离业务处理与 IO 事件循环。
+- SqlConnPool / MysqlStmt：连接池和参数化 SQL。
+- RedisSessionManager：带 TTL 的共享 Session 和用户 token 反向索引。
+- RedisStockCache / RedisOrderQueue：库存预扣与 Redis Streams 异步订单。
+- ScheduledThreadPool：订单过期、模拟支付结算、退款重试、开售提醒和统计任务。
 
-**生产环境要求**: 需安装 hiredis 库
+## 当前领域模型
 
-**详细文档**: [docs/REDIS_SESSION_IMPLEMENTATION.md](../docs/REDIS_SESSION_IMPLEMENTATION.md)
+v10 目录以活动和场次为核心：
 
-### 2. Metrics Manager
-
-暴露 Prometheus 格式的监控指标。
-
-**配置启用**:
-```json
-{
-  "metrics": {
-    "port": 8080,
-    "enabled": true
-  }
-}
+```text
+events -> venues -> halls -> event_sessions -> ticket_tiers / seats
+                                              -> reservations -> payments / refunds
 ```
 
-**暴露指标**:
-- `hyperticket_requests_total` - 请求总数
-- `hyperticket_orders_total` - 订单总数
-- `hyperticket_sessions_active` - 活跃会话数
-- `hyperticket_db_connections_active/idle` - 数据库连接数
-- `hyperticket_errors_total` - 错误总数
+兼容 `tickets` 表仍用于部分既有协议，但前端目录、场次库存和管理流程以 v10 表为准。
 
-**访问方式**: `curl http://localhost:8080/metrics`
+## 协议分组
 
-**详细文档**: [docs/PROMETHEUS_METRICS_GUIDE.md](../docs/PROMETHEUS_METRICS_GUIDE.md)
+协议常量以 [Protocol.hpp](../Common/include/Protocol.hpp) 为唯一事实来源。主要分组如下：
 
-### 3. Verification Provider
+| 范围 | 能力 |
+|---|---|
+| `1-7` | 登录、注册、退出、浏览、异步下单、订单、取消 |
+| `8-18` | 管理、删除订单、座位和验票 |
+| `19-25` | 详情、支付、收藏、热门、支付查询、订单查询 |
+| `26-35` | 验证码、密码重置、联系方式验证、安全状态 |
+| `36-42` | 个人资料、观演人、浏览历史、开售提醒 |
+| `43-46` | v10 活动目录、场次和管理员提醒审计 |
 
-`IVerificationProvider` unifies code delivery and verification. Production
-email uses certificate-verified SMTP TLS. Local tests may enable the owner-only
-JSONL inbox documented in `docs/AUTH_VERIFICATION.md`; it is disabled by
-default. Cooldown, daily limits, attempt limits, one-time grants, replay
-protection, and audit records are enforced independently of the delivery mode.
+`ORDER(5)` 接收后返回 `QUEUED` 和 `request_id`，客户端使用 `ORDER_QUERY(25)` 轮询到 `PENDING` 或 `FAILED`。支付请求使用最小货币单位、Provider 和 8-64 位客户端幂等键。
 
-## 核心流程
+## 认证与验证
 
-1. **IO 线程**: MessageCallback 接收数据，按换行符分割 JSON
-2. **限流保护**: 超出频率返回 RATE_LIMITED
-3. **JSON 解析**: 失败返回 JSON_PARSE 错误
-4. **业务分发**: TicketService::handleRequest 根据 type 字段路由
+- Redis Session 具有 TTL，并维护 `user_id -> tokens` 反向索引。
+- 退出、修改密码和密码重置会按场景撤销 Session。
+- 登录失败按账号、IP 和设备维度限制，并支持临时锁定与自动解锁。
+- 管理员 Session 使用 Redis TTL；默认密码未修改时限制敏感操作。
+- Verification Provider 统一邮件、开发收件箱和模拟短信的验证码发送。
+- 验证码具有 TTL、冷却、每日上限、错误次数上限、单次使用和审计。
 
-## 请求类型 OP_TYPE
+## 订单与支付
 
-| type | 名称 | 说明 | 需要 token |
-|------|------|------|:----------:|
-| 1 | LOGIN | 登录，成功后返回 token | |
-| 2 | REGISTER | 用户注册 | |
-| 3 | EXIT | 退出登录 | |
-| 4 | VIEW | 查看在售票务，status=1 | |
-| 5 | ORDER | 下单预订 | 需要 |
-| 6 | VIEW_MY | 查看本人订单 | 需要 |
-| 7 | CANCEL | 取消预订 | 需要 |
-| 20 | PAY_ORDER | 创建支付请求（Provider + 客户端幂等键） | 需要 |
-| 24 | PAY_QUERY | 查询支付与退款状态 | 需要 |
-| 25 | ORDER_QUERY | 查询异步下单状态 | 需要 |
+- Redis Lua 原子预扣库存并向 Stream 写入请求。
+- 消费者事务写入订单、座位和观演人关联；失败时执行库存补偿。
+- 超时和取消同时释放 MySQL 座位与 Redis 库存。
+- 默认只启用 `MOCK` 支付；`ALIPAY`、`WECHAT` 是显式开关控制的模拟占位 Provider。
+- 当前支付状态只能由模拟 Provider 可信结果推进，客户端声明成功不会确认订单。
 
-`ORDER` 成功接收时立即返回 `QUEUED` 与 `request_id`，客户端通过
-`ORDER_QUERY` 轮询至 `PENDING` 或 `FAILED`。详见
-[异步下单架构](../../docs/ASYNC_ORDER_ARCHITECTURE.md)。
+## 配置
 
-支付金额使用 `amount_minor`（CNY 分）。支付请求由客户端提供 8-64 位
-`idempotency_key`；同一用户重复使用相同键会返回原支付单，参数冲突会被拒绝。
-默认只注册 `MOCK`。开发环境可以显式启用 `ALIPAY`、`WECHAT` 模拟占位
-Provider；它们不发起任何外部网络请求，生产环境必须保持关闭。详见
-[支付 Provider 指南](../../docs/PAYMENT_PROVIDERS.md)。
+复制 `config.example.json` 与 `.env.example`。覆盖优先级为：
 
-**请求字段**: type, usertel, password, username, token, index 等
+```text
+config.json < .env < 进程环境变量
+```
 
-**响应格式**:
-- 成功: `{"status":"OK", ...}`
-- 失败: `{"status":"ERR","reason":"..."}`
+主要配置段：`server`、`db`、`redis`、`payment`、`auth`、`verification`、`order_queue`、`metrics` 和 `schedule`。真实密钥只应放在未跟踪的 `.env` 或外部密钥系统中。
 
-## 安全机制
-
-### Session 管理
-
-**Token 机制**: SessionManager 统一管理
-- 生成: 32 字节随机 token，64 位 hex 编码，使用 /dev/urandom 或 random_device
-- 存储: token 映射到 {tel, userId, expireMs}，worker 线程安全访问
-- 过期: TTL 30 分钟，每次 resolve() 自动续期 60 分钟
-- 安全: ORDER/VIEW_MY/CANCEL 必须携带 token，服务端不信任客户端 tel
-
-### SQL 注入防护
-
-- 使用 MysqlStmt 预处理语句
-- 提供 bindString / bindInt 等类型安全接口
-- 禁止字符串拼接 SQL
-
-### 连接保护
-
-- **连接数限制**: max_connections 默认 1000，超限 forceClose
-- **频率限制**: RateLimiter 单连接限流，max_requests_per_sec 默认 20/秒
-
-### 事务安全
-
-- ORDER/CANCEL 使用 SELECT ... FOR UPDATE 行锁
-- 同时更新 reservation_audit 审计表
-- 防止超卖和竞态条件
-
-## 配置说明
-
-配置文件: config.json（参考 config.example.json）
-
-支持 .env 覆盖数据库配置: [Common/AppConfig](../Common/README.md)
-
-### 主要配置项
-
-| 配置项 | 说明 |
-|--------|------|
-| server.ip / server.port | 监听地址，默认 0.0.0.0:7000 |
-| server.io_threads | IO 线程数（当前建议设为 1） |
-| server.worker_threads | 业务线程数 |
-| server.max_connections | 最大连接数 |
-| server.max_requests_per_sec | 单连接限流 |
-| db.* | 数据库连接配置 |
-| db.pool_size | 连接池大小 |
-| log.* | 日志配置 |
-| schedule.* | 定时任务配置 |
-| redis.* | Redis Session 配置 |
-| metrics.* | 监控指标配置 |
-
-**数据库初始化**: 执行 db/init.sql 创建表结构
-
-## 核心组件
-
-### SessionManager / RedisSessionManager
-
-- **内存版**: include/SessionManager.hpp，单进程使用
-- **Redis 版**: include/RedisSessionManager.hpp，多实例共享
-- 切换方式: config.json 设置 redis.enabled
-
-### MetricsManager
-
-- 文件: include/MetricsManager.hpp, src/MetricsManager.cpp
-- 功能: 暴露 Prometheus 指标
-- 启用: config.json 设置 metrics.enabled: true
-
-### RateLimiter
-
-- 文件: include/RateLimiter.hpp
-- 功能: 令牌桶限流
-- 配置: server.max_requests_per_sec
-
-### HealthCheck
-
-- 文件: include/HealthCheck.hpp
-- 端点: GET /health
-- 检查项: 数据库、磁盘、内存
-
-## 构建与运行
+## 构建与测试
 
 ```bash
-# 构建
-cmake -S . -B build && cmake --build build -j
-
-# 运行（需 config.json）
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+cmake --build build --parallel 4
+ctest --test-dir build --output-on-failure
+./scripts/run-payment-e2e.sh
 ./bin/ser
 ```
 
-## 文件结构
+CTest 当前包含 11 个单元/集成测试；Redis Session、库存和订单队列测试需要可访问的 Redis。GitHub Actions 使用 `redis:7-alpine` 服务容器。
 
-| 文件 | 说明 |
-|------|------|
-| include/ser.hpp | 主头文件，定义 OP_TYPE |
-| include/SessionManager.hpp | 内存 Session 管理 |
-| include/RedisSessionManager.hpp | Redis Session 管理 |
-| include/MetricsManager.hpp | Prometheus 指标 |
-| include/RateLimiter.hpp | 限流器 |
-| include/HealthCheck.hpp | 健康检查 |
-| include/MysqlStmt.hpp | 预处理语句 RAII 封装 |
-| src/ser.cpp | 主程序，包含 TicketService 和 main |
-| src/RedisSessionManager.cpp | Redis Session 实现 |
-| src/MetricsManager.cpp | 指标收集实现 |
+## 相关文档
 
-## 部署建议
-
-### 水平扩展
-
-- 启用 Redis Session: redis.enabled: true
-- 前端使用 Nginx / HAProxy / Kubernetes Service 负载均衡
-- MySQL 和 Redis 使用独立集群
-
-### 监控
-
-- 启用 Metrics: metrics.enabled: true
-- Prometheus 抓取指标
-- Grafana 配置仪表盘
-- 配置告警规则
-
-### 容器化
-
-- Kubernetes liveness/readiness probe 使用 /health
-- 资源限制: 根据 QPS 调整 CPU / 内存
-- 日志收集: 挂载日志目录到宿主机或使用 sidecar
-
-## 性能指标
-
-### 已完成的优化
-
-- 数据库索引优化: 查询性能提升 10-100 倍
-- 连接池健康检查: 失败率从 5% 降至 0.1%
-- 多 IO 线程竞态修复 Phase 1: 关键方法使用 shared_from_this
-
-### 基准数据
-
-| 指标 | 数值 | 条件 |
-|------|------|------|
-| QPS | > 10,000 | 8 worker threads |
-| 延迟 | P99 < 100ms | 含数据库查询 |
-| 并发连接 | 1000+ | 可配置 |
-| 连接池 | 20 连接 | 可配置 |
-
-## 故障排查
-
-### 启动失败
-
-1. **配置错误**
-   - 检查 MySQL 连接信息
-   - 验证 config.json 格式
-   - 查看 logs/hyperticket.log
-
-2. **端口占用**
-   - `lsof -i :7000`
-   - 修改 config.json 中的 server.port
-
-### 性能问题
-
-1. **监控检查**
-   - 查看 metrics: curl http://localhost:8080/metrics
-   - 检查数据库连接池使用率
-   - 确认 worker_threads 和 db.pool_size 配置
-
-2. **内存泄漏**
-   - valgrind 检测: `valgrind --leak-check=full ./bin/ser`
-   - 检查 shared_ptr 循环引用
-
-### 连接问题
-
-- 检查防火墙设置
-- 验证 max_connections 是否达到上限
-- 查看 RateLimiter 日志
-
-## 参考文档
-
-- [../README.md](../README.md) - 项目总览
-- [../DESIGN.md](../DESIGN.md) - 前端设计系统
-- [../docs/REDIS_SESSION_IMPLEMENTATION.md](../docs/REDIS_SESSION_IMPLEMENTATION.md) - Redis Session 指南
-- [../docs/PROMETHEUS_METRICS_GUIDE.md](../docs/PROMETHEUS_METRICS_GUIDE.md) - 监控指南
+- [异步下单架构](../../docs/ASYNC_ORDER_ARCHITECTURE.md)
+- [认证安全](../../docs/AUTH_SECURITY_PHASE1.md)
+- [验证码与账号生命周期](../../docs/AUTH_VERIFICATION.md)
+- [支付 Provider](../../docs/PAYMENT_PROVIDERS.md)
+- [v10 目录运行手册](../../docs/catalog-v10-runbook.md)
+- [后端差距分析](../../docs/BACKEND_GAP_ANALYSIS.md)

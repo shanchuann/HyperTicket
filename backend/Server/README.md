@@ -62,6 +62,14 @@ HyperTicket 服务端程序，基于自研 Inet Reactor 网络库实现高并发
 
 **详细文档**: [docs/PROMETHEUS_METRICS_GUIDE.md](../docs/PROMETHEUS_METRICS_GUIDE.md)
 
+### 3. Verification Provider
+
+`IVerificationProvider` unifies code delivery and verification. Production
+email uses certificate-verified SMTP TLS. Local tests may enable the owner-only
+JSONL inbox documented in `docs/AUTH_VERIFICATION.md`; it is disabled by
+default. Cooldown, daily limits, attempt limits, one-time grants, replay
+protection, and audit records are enforced independently of the delivery mode.
+
 ## 核心流程
 
 1. **IO 线程**: MessageCallback 接收数据，按换行符分割 JSON
@@ -80,11 +88,17 @@ HyperTicket 服务端程序，基于自研 Inet Reactor 网络库实现高并发
 | 5 | ORDER | 下单预订 | 需要 |
 | 6 | VIEW_MY | 查看本人订单 | 需要 |
 | 7 | CANCEL | 取消预订 | 需要 |
+| 20 | PAY_ORDER | 创建支付请求（`provider=MOCK` + 客户端幂等键） | 需要 |
+| 24 | PAY_QUERY | 查询支付与退款状态 | 需要 |
 | 25 | ORDER_QUERY | 查询异步下单状态 | 需要 |
 
 `ORDER` 成功接收时立即返回 `QUEUED` 与 `request_id`，客户端通过
 `ORDER_QUERY` 轮询至 `PENDING` 或 `FAILED`。详见
 [异步下单架构](../../docs/ASYNC_ORDER_ARCHITECTURE.md)。
+
+支付金额使用 `amount_minor`（CNY 分）。支付请求由客户端提供 8-64 位
+`idempotency_key`；同一用户重复使用相同键会返回原支付单，参数冲突会被拒绝。
+`ALIPAY` 和 `WECHAT` 在 Provider 接入前返回 `PAYMENT_PROVIDER_UNAVAILABLE`。
 
 **请求字段**: type, usertel, password, username, token, index 等
 

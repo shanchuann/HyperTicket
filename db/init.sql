@@ -95,26 +95,74 @@ CREATE TABLE IF NOT EXISTS reservations (
   INDEX idx_resv_pending_expire (status, expire_at)  -- 定时回收超时 PENDING 订单
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
--- Payments: 支付流水表（v3 支付模块）
--- 发起支付即写入一条 PROCESSING 流水（已提交模拟网关、等待异步结算）；
--- 定时任务到 settle_at 后结算为 SUCCESS/FAILED；
--- 结算成功但订单已失效（超时回收/取消）时补偿为 REFUNDED。
+-- Payments: 支付领域模型（金额使用最小货币单位；CNY 为分）
 CREATE TABLE IF NOT EXISTS payments (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  payment_no VARCHAR(32) DEFAULT NULL,        -- 支付单号 PY{YYYYMMDD}{ID:08d}，创建后生成
+  payment_no VARCHAR(32) DEFAULT NULL,
   reservation_id BIGINT NOT NULL,
   user_id INT NOT NULL,
-  amount INT NOT NULL DEFAULT 0,              -- 应付金额（元），创建时按选座价/票面价快照
-  method VARCHAR(16) NOT NULL DEFAULT 'MOCK', -- 支付渠道：MOCK/ALIPAY/WECHAT
-  status ENUM('PROCESSING','SUCCESS','FAILED','REFUNDED') NOT NULL DEFAULT 'PROCESSING',
-  settle_at DATETIME(3) NOT NULL,             -- 模拟网关结算时间，到点由定时任务结算
-  created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  amount_minor BIGINT NOT NULL,
+  currency CHAR(3) NOT NULL DEFAULT 'CNY',
+  provider VARCHAR(16) NOT NULL,
+  provider_transaction_id VARCHAR(128) DEFAULT NULL,
+  client_idempotency_key VARCHAR(64) NOT NULL,
+  status ENUM('CREATED','PROCESSING','SUCCEEDED','FAILED','CLOSED','REFUNDING','PARTIALLY_REFUNDED','REFUNDED') NOT NULL DEFAULT 'CREATED',
+  next_action_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
   UNIQUE KEY uq_pay_no (payment_no),
+  UNIQUE KEY uq_pay_user_idempotency (user_id, client_idempotency_key),
   INDEX idx_pay_resv_status (reservation_id, status),
-  INDEX idx_pay_settle (status, settle_at),   -- 定时结算扫描
+  INDEX idx_pay_action (status, next_action_at),
+  INDEX idx_pay_provider_txn (provider, provider_transaction_id),
   CONSTRAINT fk_pay_resv FOREIGN KEY (reservation_id) REFERENCES reservations(id) ON DELETE CASCADE,
   CONSTRAINT fk_pay_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS payment_events (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  payment_id BIGINT NOT NULL,
+  from_status VARCHAR(32) NOT NULL DEFAULT '',
+  to_status VARCHAR(32) NOT NULL,
+  source VARCHAR(32) NOT NULL,
+  detail VARCHAR(512) NOT NULL DEFAULT '',
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  INDEX idx_payment_events_payment (payment_id, created_at),
+  CONSTRAINT fk_payment_events_payment FOREIGN KEY (payment_id) REFERENCES payments(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS refunds (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  payment_id BIGINT NOT NULL,
+  refund_no VARCHAR(32) NOT NULL,
+  amount_minor BIGINT NOT NULL,
+  currency CHAR(3) NOT NULL DEFAULT 'CNY',
+  status ENUM('CREATED','PROCESSING','SUCCEEDED','FAILED') NOT NULL DEFAULT 'CREATED',
+  provider_refund_id VARCHAR(128) DEFAULT NULL,
+  reason VARCHAR(255) NOT NULL DEFAULT '',
+  failure_reason VARCHAR(255) NOT NULL DEFAULT '',
+  next_action_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  updated_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+  UNIQUE KEY uq_refund_no (refund_no),
+  INDEX idx_refund_payment (payment_id),
+  INDEX idx_refund_action (status, next_action_at),
+  CONSTRAINT fk_refund_payment FOREIGN KEY (payment_id) REFERENCES payments(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
+
+CREATE TABLE IF NOT EXISTS payment_webhook_events (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  provider VARCHAR(16) NOT NULL,
+  provider_event_id VARCHAR(128) NOT NULL,
+  payment_id BIGINT DEFAULT NULL,
+  signature_valid TINYINT(1) NOT NULL DEFAULT 0,
+  payload_hash CHAR(64) NOT NULL,
+  processing_status ENUM('RECEIVED','PROCESSED','REJECTED') NOT NULL DEFAULT 'RECEIVED',
+  created_at DATETIME(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3),
+  processed_at DATETIME(3) DEFAULT NULL,
+  UNIQUE KEY uq_webhook_provider_event (provider, provider_event_id),
+  INDEX idx_webhook_payment (payment_id),
+  CONSTRAINT fk_webhook_payment FOREIGN KEY (payment_id) REFERENCES payments(id) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
 -- Optional admin table for manager accounts

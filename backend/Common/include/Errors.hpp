@@ -30,6 +30,9 @@ namespace hyperticket
 
         constexpr const char *kOrderNotFound = "ORDER_NOT_FOUND";
         constexpr const char *kOrderCannotCancel = "ORDER_CANNOT_CANCEL";
+        constexpr const char *kPaymentProviderUnavailable = "PAYMENT_PROVIDER_UNAVAILABLE";
+        constexpr const char *kPaymentIdempotencyConflict = "PAYMENT_IDEMPOTENCY_CONFLICT";
+        constexpr const char *kPaymentInProgress = "PAYMENT_IN_PROGRESS";
 
         // 管理员相关
         constexpr const char *kAdminUnauthorized = "ADMIN_UNAUTHORIZED";

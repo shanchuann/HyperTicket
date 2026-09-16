@@ -87,10 +87,15 @@ namespace hyperticket
         constexpr const char *kArtist = "artist";
 
         // v3 支付模块字段
-        constexpr const char *kMethod = "method";               // 支付渠道 MOCK/ALIPAY/WECHAT
+        constexpr const char *kMethod = "method";               // 兼容字段；新客户端使用 provider
+        constexpr const char *kProvider = "provider";
+        constexpr const char *kProviderTransactionId = "provider_transaction_id";
+        constexpr const char *kIdempotencyKey = "idempotency_key";
         constexpr const char *kPaymentNo = "payment_no";        // 支付单号
-        constexpr const char *kPaymentStatus = "payment_status"; // PROCESSING/SUCCESS/FAILED/REFUNDED
-        constexpr const char *kAmount = "amount";               // 应付金额（元）
+        constexpr const char *kPaymentStatus = "payment_status";
+        constexpr const char *kAmount = "amount";               // 兼容：元
+        constexpr const char *kAmountMinor = "amount_minor";    // 最小货币单位，CNY 时为分
+        constexpr const char *kCurrency = "currency";
         constexpr const char *kEmail = "email";
         constexpr const char *kChannel = "channel";
         constexpr const char *kPurpose = "purpose";

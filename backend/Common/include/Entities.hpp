@@ -63,10 +63,26 @@ namespace hyperticket
         std::string paymentNo;   // 支付单号 PY{YYYYMMDD}{ID:08d}
         int64_t reservationId = 0;
         int64_t userId = 0;
-        int amount = 0;          // 应付金额（元）
-        std::string method;      // MOCK / ALIPAY / WECHAT
-        std::string status;      // PROCESSING / SUCCESS / FAILED / REFUNDED
+        int64_t amountMinor = 0; // 最小货币单位，CNY 时为分
+        std::string currency = "CNY";
+        std::string provider;    // MOCK / ALIPAY / WECHAT
+        std::string providerTransactionId;
+        std::string idempotencyKey;
+        std::string status;      // CREATED/PROCESSING/SUCCEEDED/FAILED/CLOSED/REFUNDING/PARTIALLY_REFUNDED/REFUNDED
         std::string createdAt;
+    };
+
+    struct Refund
+    {
+        int64_t id = 0;
+        int64_t paymentId = 0;
+        std::string refundNo;
+        int64_t amountMinor = 0;
+        std::string currency = "CNY";
+        std::string status;
+        std::string paymentNo;
+        std::string paymentProviderTransactionId;
+        std::string providerRefundId;
     };
 
     struct Seat

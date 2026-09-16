@@ -1,35 +1,68 @@
 #include "../../include/service/TicketService.hpp"
 
-#include <random>
+#include <cctype>
 
 #include "../../../Common/include/Protocol.hpp"
 #include "../../../Common/include/Errors.hpp"
+#include "../../include/PaymentStateMachine.hpp"
 #include "../../include/ServiceUtil.hpp"
 #include "../../include/service/Txn.hpp"
 #include "../../../ChronoLite/include/Logger.hpp"
-
-// v3 支付模块：把 v2 的"一条 UPDATE 即支付"升级为带流水的异步支付。
-//
-//   PAY_ORDER (20)  发起支付：校验订单 PENDING → 写 PROCESSING 流水（提交模拟网关）
-//   定时结算任务     settle_at 到点后模拟网关回调：PROCESSING → SUCCESS/FAILED；
-//                    结算成功但订单已失效（超时回收/取消）则补偿为 REFUNDED
-//   PAY_QUERY (24)  前端轮询支付结果
-//
-// 并发关键点：发起支付/取消/超时回收/结算确认都先锁 reservation 行（FOR UPDATE
-// 或条件 UPDATE），同一订单上的竞争操作被串行化；流水状态迁移全部是
-// "WHERE status='PROCESSING'" 的条件 UPDATE，重复结算天然幂等。
 
 namespace hyperticket
 {
     namespace
     {
-        bool isValidMethod(const std::string &m)
+        bool isValidIdempotencyKey(const std::string &key)
         {
-            return m == "MOCK" || m == "ALIPAY" || m == "WECHAT";
+            if (key.size() < 8 || key.size() > 64) return false;
+            for (unsigned char ch : key)
+            {
+                if (!std::isalnum(ch) && ch != '-' && ch != '_' && ch != '.' && ch != ':')
+                    return false;
+            }
+            return true;
+        }
+
+        Json::Value paymentResponse(const Payment &payment)
+        {
+            Json::Value response = makeOk();
+            response[field::kPaymentNo] = payment.paymentNo;
+            response[field::kPaymentStatus] = payment.status;
+            response[field::kAmountMinor] = static_cast<Json::Int64>(payment.amountMinor);
+            response[field::kAmount] = static_cast<Json::Int64>(payment.amountMinor / 100);
+            response[field::kCurrency] = payment.currency;
+            response[field::kProvider] = payment.provider;
+            response[field::kMethod] = payment.provider;
+            response[field::kProviderTransactionId] = payment.providerTransactionId;
+            response[field::kIdempotencyKey] = payment.idempotencyKey;
+            return response;
+        }
+
+        PaymentProviderRequest providerRequest(const Payment &payment)
+        {
+            PaymentProviderRequest request;
+            request.paymentNo = payment.paymentNo;
+            request.providerTransactionId = payment.providerTransactionId;
+            request.idempotencyKey = payment.idempotencyKey;
+            request.amountMinor = payment.amountMinor;
+            request.currency = payment.currency;
+            return request;
+        }
+
+        std::string providerStateName(ProviderPaymentState state)
+        {
+            switch (state)
+            {
+            case ProviderPaymentState::Processing: return "PROCESSING";
+            case ProviderPaymentState::Succeeded: return "SUCCEEDED";
+            case ProviderPaymentState::Failed: return "FAILED";
+            case ProviderPaymentState::Closed: return "CLOSED";
+            }
+            return "FAILED";
         }
     }
 
-    // ========== PAY_ORDER (type 20) — 发起支付 ==========
     Json::Value TicketService::payOrder(const Json::Value &req)
     {
         std::string tel;
@@ -37,11 +70,20 @@ namespace hyperticket
         if (!sessions_->resolve(req.get(field::kToken, "").asString(), nowMs(), tel, userId))
             return makeError(err::kUnauthorized);
 
-        int64_t resvId = getIntField(req, field::kIndex, -1);
-        if (resvId <= 0) return makeError(err::kInvalidInput);
-
-        std::string method = req.get(field::kMethod, "MOCK").asString();
-        if (!isValidMethod(method)) return makeError(err::kInvalidInput);
+        const int64_t reservationId = getIntField(req, field::kIndex, -1);
+        const std::string provider = req.get(
+            field::kProvider, req.get(field::kMethod, "MOCK")).asString();
+        const std::string idempotencyKey = req.get(field::kIdempotencyKey, "").asString();
+        if (reservationId <= 0 || !isValidIdempotencyKey(idempotencyKey))
+            return makeError(err::kInvalidInput);
+        if (provider != "MOCK")
+        {
+            if (provider == "ALIPAY" || provider == "WECHAT")
+                return makeError(err::kPaymentProviderUnavailable);
+            return makeError(err::kInvalidInput);
+        }
+        if (!paymentProvider_ || paymentProvider_->name() != provider)
+            return makeError(err::kPaymentProviderUnavailable);
 
         MYSQL *conn = nullptr;
         shanchuan::ConnectionGuard raii(&conn, pool_);
@@ -50,60 +92,62 @@ namespace hyperticket
         Txn txn(conn);
         if (!txn.ok()) return makeError(err::kDbBegin);
 
-        // 锁订单行：与取消/超时回收/结算串行化，同时保证下面的
-        // "查进行中流水 → 不存在才新建" 在并发重复点击下仍然只建一笔。
-        Reservation r;
-        if (!resvRepo_.lockOwnedForUpdate(conn, resvId, userId, r))
+        Payment existing;
+        if (payRepo_.findByIdempotencyKey(conn, userId, idempotencyKey, existing))
+        {
+            txn.rollback();
+            if (existing.reservationId != reservationId || existing.provider != provider)
+                return makeError(err::kPaymentIdempotencyConflict);
+            return paymentResponse(existing);
+        }
+
+        Reservation reservation;
+        if (!resvRepo_.lockOwnedForUpdate(conn, reservationId, userId, reservation))
         {
             txn.rollback();
             return makeError(err::kOrderNotFound);
         }
-        if (r.status != "PENDING")
+        if (reservation.status != "PENDING")
         {
             txn.rollback();
             return makeError("ORDER_NOT_PAYABLE");
         }
 
-        // 幂等：该订单已有进行中的支付流水，直接复用返回
-        Payment existing;
-        if (payRepo_.findProcessingByResv(conn, resvId, existing))
-        {
-            txn.rollback(); // 只读路径
-            Json::Value res = makeOk();
-            res[field::kPaymentNo] = existing.paymentNo;
-            res[field::kPaymentStatus] = existing.status;
-            res[field::kAmount] = existing.amount;
-            return res;
-        }
-
-        if (!payRepo_.insertForReservation(conn, resvId, method, paySettleDelayMs_))
+        Payment active;
+        if (payRepo_.findActiveByResv(conn, reservationId, active))
         {
             txn.rollback();
+            return makeError(err::kPaymentInProgress);
+        }
+
+        if (!payRepo_.insertForReservation(conn, reservationId, userId, provider, idempotencyKey))
+        {
+            txn.rollback();
+            Payment raced;
+            if (payRepo_.findByIdempotencyKey(conn, userId, idempotencyKey, raced))
+            {
+                if (raced.reservationId != reservationId || raced.provider != provider)
+                    return makeError(err::kPaymentIdempotencyConflict);
+                return paymentResponse(raced);
+            }
             return makeError(err::kDbInsert);
         }
-        int64_t payId = static_cast<int64_t>(mysql_insert_id(conn));
-        payRepo_.setPaymentNo(conn, payId);
-        resvRepo_.insertAudit(conn, resvId, "PAY_CREATE", "user:" + tel + " method:" + method);
 
-        if (!txn.commit())
+        const int64_t paymentId = static_cast<int64_t>(mysql_insert_id(conn));
+        if (!payRepo_.setPaymentNo(conn, paymentId) ||
+            !payRepo_.appendEvent(conn, paymentId, "", "CREATED", "CLIENT", "payment created") ||
+            !resvRepo_.insertAudit(conn, reservationId, "PAY_CREATED", "user:" + tel + " provider:" + provider) ||
+            !txn.commit())
         {
             txn.rollback();
             return makeError(err::kDbUpdate);
         }
 
-        // 结算由定时任务在 settle_at 到点后完成，这里返回流水信息供前端轮询
         Payment created;
-        if (!payRepo_.latestByResv(conn, resvId, userId, created))
-            return makeError(err::kDbUnavailable);
-
-        Json::Value res = makeOk();
-        res[field::kPaymentNo] = created.paymentNo;
-        res[field::kPaymentStatus] = created.status;
-        res[field::kAmount] = created.amount;
-        return res;
+        if (!payRepo_.findById(conn, paymentId, created)) return makeError(err::kDbUnavailable);
+        return paymentResponse(created);
     }
 
-    // ========== PAY_QUERY (type 24) — 轮询支付结果 ==========
     Json::Value TicketService::queryPayment(const Json::Value &req)
     {
         std::string tel;
@@ -111,36 +155,28 @@ namespace hyperticket
         if (!sessions_->resolve(req.get(field::kToken, "").asString(), nowMs(), tel, userId))
             return makeError(err::kUnauthorized);
 
-        int64_t resvId = getIntField(req, field::kIndex, -1);
-        if (resvId <= 0) return makeError(err::kInvalidInput);
+        const int64_t reservationId = getIntField(req, field::kIndex, -1);
+        if (reservationId <= 0) return makeError(err::kInvalidInput);
 
         MYSQL *conn = nullptr;
         shanchuan::ConnectionGuard raii(&conn, pool_);
         if (!conn) return makeError(err::kDbUnavailable);
 
-        Payment p;
-        if (!payRepo_.latestByResv(conn, resvId, userId, p))
-            return makeError(err::kOrderNotFound); // 该订单没有支付流水
+        Payment payment;
+        if (!payRepo_.latestByResv(conn, reservationId, userId, payment))
+            return makeError(err::kOrderNotFound);
 
-        // 一并带回订单状态，前端一次轮询即可同步刷新订单卡片
         std::string orderStatus;
-        resvRepo_.getOwnedStatus(conn, resvId, userId, orderStatus);
-
-        Json::Value res = makeOk();
-        res[field::kPaymentNo] = p.paymentNo;
-        res[field::kPaymentStatus] = p.status;
-        res[field::kAmount] = p.amount;
-        res[field::kMethod] = p.method;
-        res["order_status"] = orderStatus;
-        return res;
+        resvRepo_.getOwnedStatus(conn, reservationId, userId, orderStatus);
+        Json::Value response = paymentResponse(payment);
+        response["order_status"] = orderStatus;
+        return response;
     }
 
-    // ========== 定时任务：结算到期的 PROCESSING 支付流水 ==========
-    // 模拟第三方网关的异步回调：事务内锁定到期流水 → 按成功率判定结果。
-    // 成功时用条件 UPDATE 确认订单（PENDING+未过期才命中）；确认不到说明
-    // 订单已被超时回收/取消——网关已扣款，补偿为 REFUNDED。
     bool TicketService::settleDuePayments()
     {
+        if (!paymentProvider_) return false;
+
         MYSQL *conn = nullptr;
         shanchuan::ConnectionGuard raii(&conn, pool_);
         if (!conn) return false;
@@ -148,47 +184,132 @@ namespace hyperticket
         Txn txn(conn);
         if (!txn.ok()) return false;
 
-        std::vector<Payment> due = payRepo_.lockDueProcessing(conn, 200);
-        if (due.empty())
+        const std::vector<Payment> duePayments = payRepo_.lockDuePayments(conn, 200);
+        int created = 0, succeeded = 0, failed = 0, closed = 0, refunded = 0;
+        for (const Payment &candidate : duePayments)
         {
-            txn.rollback();
-            return true;
-        }
-
-        thread_local std::mt19937 rng{std::random_device{}()};
-        std::uniform_int_distribution<int> roll(0, 99);
-
-        int success = 0, failed = 0, refunded = 0;
-        for (const Payment &p : due)
-        {
-            std::string outcome;
-            if (roll(rng) < paySuccessRatePercent_)
-            {
-                if (resvRepo_.pay(conn, p.reservationId, p.userId))
-                {
-                    outcome = "SUCCESS";
-                    ++success;
-                }
-                else
-                {
-                    outcome = "REFUNDED"; // 订单已失效，补偿退款
-                    ++refunded;
-                }
-            }
-            else
-            {
-                outcome = "FAILED"; // 订单保持 PENDING，可在截止前重新发起支付
-                ++failed;
-            }
-
-            if (!payRepo_.settleFromProcessing(conn, p.id, outcome))
+            // All order/payment paths lock in reservation -> payment order.
+            Reservation lockedReservation;
+            if (!resvRepo_.lockOwnedForUpdate(conn, candidate.reservationId,
+                                              candidate.userId, lockedReservation))
+                continue;
+            Payment payment;
+            if (!payRepo_.lockById(conn, candidate.id, payment) ||
+                (payment.status != "CREATED" && payment.status != "PROCESSING"))
+                continue;
+            if (payment.provider != paymentProvider_->name())
             {
                 txn.rollback();
                 return false;
             }
-            resvRepo_.insertAudit(conn, p.reservationId, "PAY_" + outcome,
-                                  outcome == "REFUNDED" ? "system:settle-compensate"
-                                                        : "system:mock-gateway");
+
+            const std::string &orderStatus = lockedReservation.status;
+            if (payment.status == "CREATED")
+            {
+                if (orderStatus != "PENDING")
+                {
+                    if (!payRepo_.transition(conn, payment.id, "CREATED", "CLOSED", "") ||
+                        !payRepo_.appendEvent(conn, payment.id, "CREATED", "CLOSED", "SYSTEM", "order not payable"))
+                    {
+                        txn.rollback();
+                        return false;
+                    }
+                    ++closed;
+                    continue;
+                }
+
+                const PaymentProviderResult result = paymentProvider_->createPayment(providerRequest(payment));
+                const std::string next = result.accepted ? providerStateName(result.state) : "FAILED";
+                if (!canTransitionPayment("CREATED", next) ||
+                    !payRepo_.transition(conn, payment.id, "CREATED", next,
+                                         result.providerTransactionId, paySettleDelayMs_) ||
+                    !payRepo_.appendEvent(conn, payment.id, "CREATED", next, "PROVIDER", result.reason))
+                {
+                    txn.rollback();
+                    return false;
+                }
+                ++created;
+                if (next == "FAILED") ++failed;
+                continue;
+            }
+
+            PaymentProviderResult result;
+            if (orderStatus != "PENDING")
+                result = paymentProvider_->closePayment(providerRequest(payment));
+            else
+                result = paymentProvider_->queryPayment(providerRequest(payment));
+
+            std::string next = result.accepted ? providerStateName(result.state) : "FAILED";
+            if (next == "PROCESSING")
+            {
+                if (!payRepo_.transition(conn, payment.id, "PROCESSING", "PROCESSING",
+                                         result.providerTransactionId, paySettleDelayMs_))
+                {
+                    txn.rollback();
+                    return false;
+                }
+                continue;
+            }
+            if (!canTransitionPayment("PROCESSING", next) ||
+                !payRepo_.transition(conn, payment.id, "PROCESSING", next, result.providerTransactionId) ||
+                !payRepo_.appendEvent(conn, payment.id, "PROCESSING", next, "PROVIDER", result.reason))
+            {
+                txn.rollback();
+                return false;
+            }
+
+            if (next == "SUCCEEDED")
+            {
+                if (resvRepo_.pay(conn, payment.reservationId, payment.userId))
+                {
+                    ++succeeded;
+                    resvRepo_.insertAudit(conn, payment.reservationId, "PAY_SUCCEEDED", "system:provider-query");
+                }
+                else
+                {
+                    Payment succeededPayment = payment;
+                    succeededPayment.status = "SUCCEEDED";
+                    succeededPayment.providerTransactionId = result.providerTransactionId;
+                    if (!payRepo_.beginFullRefund(conn, succeededPayment, "order not payable after settlement"))
+                    {
+                        txn.rollback();
+                        return false;
+                    }
+                    ++refunded;
+                }
+            }
+            else if (next == "FAILED") ++failed;
+            else if (next == "CLOSED") ++closed;
+        }
+
+        const std::vector<Refund> dueRefunds = payRepo_.lockDueRefunds(conn, 200);
+        for (const Refund &refund : dueRefunds)
+        {
+            RefundProviderRequest request;
+            request.refundNo = refund.refundNo;
+            request.paymentNo = refund.paymentNo;
+            request.providerTransactionId = refund.paymentProviderTransactionId;
+            request.amountMinor = refund.amountMinor;
+            request.currency = refund.currency;
+            const PaymentProviderResult result = paymentProvider_->refundPayment(request);
+            const std::string refundStatus = result.accepted && result.state == ProviderPaymentState::Succeeded
+                ? "SUCCEEDED" : "FAILED";
+            if (!payRepo_.transitionRefund(conn, refund.id, refund.status, refundStatus,
+                                           result.providerTransactionId, result.reason))
+            {
+                txn.rollback();
+                return false;
+            }
+            if (refundStatus == "SUCCEEDED")
+            {
+                if (!payRepo_.transition(conn, refund.paymentId, "REFUNDING", "REFUNDED", "") ||
+                    !payRepo_.appendEvent(conn, refund.paymentId, "REFUNDING", "REFUNDED", "PROVIDER", refund.refundNo))
+                {
+                    txn.rollback();
+                    return false;
+                }
+                ++refunded;
+            }
         }
 
         if (!txn.commit())
@@ -197,8 +318,9 @@ namespace hyperticket
             return false;
         }
 
-        LOG_INFO << "settleDuePayments: success=" << success
-                 << " failed=" << failed << " refunded=" << refunded;
+        if (!duePayments.empty() || !dueRefunds.empty())
+            LOG_INFO << "settleDuePayments: created=" << created << " succeeded=" << succeeded
+                     << " failed=" << failed << " closed=" << closed << " refunded=" << refunded;
         return true;
     }
-} // namespace hyperticket
+}

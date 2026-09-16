@@ -284,9 +284,20 @@ namespace hyperticket
         }
         resvRepo_.insertAudit(conn, r.id, "CANCEL", "user:" + tel);
 
-        // 已支付订单取消：同步把 SUCCESS 支付流水置为 REFUNDED（模拟退款）
-        if (r.status == "CONFIRMED" && payRepo_.refundSuccessByResv(conn, r.id))
-            resvRepo_.insertAudit(conn, r.id, "REFUND", "user:" + tel);
+        // 已支付订单取消只创建退款请求；退款结果由受信任 Provider 在定时任务中确认。
+        if (r.status == "CONFIRMED")
+        {
+            Payment payment;
+            if (payRepo_.lockSucceededByResv(conn, r.id, payment))
+            {
+                if (!payRepo_.beginFullRefund(conn, payment, "order cancelled by user"))
+                {
+                    txn.rollback();
+                    return makeError(err::kDbUpdate);
+                }
+                resvRepo_.insertAudit(conn, r.id, "REFUND_REQUESTED", "user:" + tel);
+            }
+        }
 
         if (!txn.commit())
         {

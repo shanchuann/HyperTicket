@@ -4,10 +4,10 @@
 直连服务端 TCP（换行分隔的 JSON 协议），用多线程模拟大量用户对同一场次
 "下单 → 发起支付 → 轮询结算" 的完整链路，验证：
 
-  1. 不超卖：SUCCESS（已支付确认）订单数 <= 该场次总库存；
+  1. 不超卖：SUCCEEDED（已支付确认）订单数 <= 该场次总库存；
   2. 支付幂等：同一订单并发多次发起支付，只产生一笔支付流水（金额一致，
      不会重复扣款）；
-  3. 库存守恒：结束后 SUCCESS 订单数 + 剩余库存 == 初始库存
+  3. 库存守恒：结束后 SUCCEEDED 订单数 + 剩余库存 == 初始库存
      （失败/退款/超时订单的库存都应被回补）。
 
 用法：
@@ -70,17 +70,32 @@ def user_flow(host, port, token, ticket_id, pay_attempts):
     result = {"ordered": False, "final": None, "amounts": set(), "pay_nos": set()}
     c = Client(host, port)
     try:
-        order = c.call({"type": 5, "token": token, "index": ticket_id})
+        request_id = f"stress-{time.time_ns()}-{threading.get_ident()}"
+        order = c.call({"type": 5, "token": token, "index": ticket_id,
+                        "quantity": 1, "request_id": request_id})
         if order.get("status") != "OK":
             return result  # 无票/下单失败
+        deadline = time.time() + 15
+        resv_id = None
+        while time.time() < deadline:
+            queued = c.call({"type": 25, "token": token, "request_id": request_id})
+            if queued.get("order_status") == "PENDING":
+                resv_id = queued.get("reservation_id")
+                break
+            if queued.get("order_status") == "FAILED":
+                return result
+            time.sleep(0.1)
+        if not resv_id:
+            return result
         result["ordered"] = True
-        resv_id = order.get("reservation_id")
+        idempotency_key = f"stress-pay-{resv_id}"
 
         # 并发对同一订单发起 N 次支付，验证只建一笔流水
         def fire_pay():
             cc = Client(host, port)
             try:
-                return cc.call({"type": 20, "token": token, "index": str(resv_id), "method": "MOCK"})
+                return cc.call({"type": 20, "token": token, "index": str(resv_id),
+                                "provider": "MOCK", "idempotency_key": idempotency_key})
             finally:
                 cc.close()
 
@@ -97,7 +112,7 @@ def user_flow(host, port, token, ticket_id, pay_attempts):
         while time.time() < deadline:
             q = c.call({"type": 24, "token": token, "index": str(resv_id)})
             st = q.get("payment_status")
-            if st and st != "PROCESSING":
+            if st and st not in ("CREATED", "PROCESSING", "REFUNDING"):
                 result["final"] = st
                 if q.get("payment_no"):
                     result["pay_nos"].add(q["payment_no"])
@@ -160,7 +175,7 @@ def main():
 
     ordered = sum(1 for r in results if r["ordered"])
     finals = Counter(r["final"] for r in results if r["final"])
-    success = finals.get("SUCCESS", 0)
+    success = finals.get("SUCCEEDED", 0)
     multi_amount = [r for r in results if len(r["amounts"]) > 1]
     multi_payno = [r for r in results if len(r["pay_nos"]) > 1]
 

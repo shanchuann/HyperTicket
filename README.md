@@ -353,7 +353,7 @@ npm start     # 监听 ws://localhost:8080
 | 17 | VIEW_SEATS | 查看票务座位图 | |
 | 18 | VERIFY_ORDER | 按订单号验票（扫码核销） | |
 | 19 | TICKET_DETAIL | 票品详情（简介 / 购票须知 / 艺人 / 城市） | |
-| 20 | PAY_ORDER | 发起支付：创建支付流水（PROCESSING），提交模拟网关异步结算（`method`: MOCK \| ALIPAY \| WECHAT） | ✓ |
+| 20 | PAY_ORDER | 发起支付：以 `idempotency_key` 创建支付请求；当前仅支持 `provider=MOCK` | ✓ |
 | 21 | FAVORITE | 收藏 / 取消收藏（`action`: add \| remove） | ✓ |
 | 22 | VIEW_FAVORITES | 我的收藏（想看）列表 | ✓ |
 | 23 | HOT_TICKETS | 热门榜（按有效订单量 TOP N，`limit` 默认 10） | |
@@ -365,7 +365,7 @@ npm start     # 监听 ws://localhost:8080
 {"type": 1, "usertel": "13800138000", "passward": "Password123"}
 {"type": 4, "keyword": "周杰伦", "city": "北京", "category": "concert"}
 {"type": 5, "token": "a1b2c3...", "index": 1, "quantity": 2}
-{"type": 20, "token": "a1b2c3...", "index": "81", "method": "MOCK"}
+{"type": 20, "token": "a1b2c3...", "index": "81", "provider": "MOCK", "idempotency_key": "checkout-81-attempt-1"}
 {"type": 24, "token": "a1b2c3...", "index": "81"}
 {"type": 21, "token": "a1b2c3...", "index": "8", "action": "add"}
 ```
@@ -374,13 +374,13 @@ npm start     # 监听 ws://localhost:8080
 
 ```
 ORDER(5) → PENDING（锁库存，expire_at = +15min）
-  ├─ PAY_ORDER(20)  → 创建 payments 流水（PROCESSING），订单仍 PENDING
+  ├─ PAY_ORDER(20)  → CREATED → PROCESSING → SUCCEEDED/FAILED/CLOSED
   │     └─ 定时结算任务（settle_interval_ms 周期，模拟网关回调）：
-  │           ├─ 成功 & 订单仍有效 → payment=SUCCESS, 订单=CONFIRMED（出票）
+  │           ├─ 成功 & 订单仍有效 → payment=SUCCEEDED, 订单=CONFIRMED（出票）
   │           ├─ 成功但订单已失效  → payment=REFUNDED（补偿退款）
   │           └─ 失败              → payment=FAILED, 订单保持 PENDING（可重试）
   ├─ PAY_QUERY(24)  → 前端轮询支付结果 + 订单状态
-  ├─ CANCEL(7)      → CANCELLED（立即回补库存；已支付则同步 REFUNDED）
+  ├─ CANCEL(7)      → CANCELLED（立即回补库存；已支付则 REFUNDING → REFUNDED）
   └─ 超时未支付      → 定时任务（30s 周期）标记 EXPIRED + 回补 MySQL 与 Redis 库存
 ```
 

@@ -23,10 +23,6 @@ HyperTicket 是一个 C++17 票务系统实践项目，覆盖活动目录、场�
   <img src="artifacts/catalog-desktop.png" alt="HyperTicket 桌面端活动目录" width="900" />
 </p>
 
-<p align="center">
-  <img src="artifacts/catalog-mobile.png" alt="HyperTicket 移动端活动目录" width="320" />
-</p>
-
 ## 已实现能力
 
 - 电影、演唱会、演出、脱口秀、展览、电竞赛事、体育赛事七类活动目录。
@@ -220,7 +216,7 @@ HyperTicket/
 ├── scripts/                    # 迁移、测试、基准与开发脚本
 ├── tests/                      # C++ 单元与 Redis 集成测试
 ├── websocket-bridge/           # 浏览器 WebSocket 到 TCP 的桥接
-├── artifacts/                  # README 使用的项目截图
+├── artifacts/                  # README 首页预览图资源
 ├── config.example.json         # 服务端配置模板
 └── CMakeLists.txt
 ```
@@ -252,4 +248,4 @@ HyperTicket/
 
 ## License
 
-[MIT](LICENSE)
+项目使用 [MIT](LICENSE) 许可证，详见 LICENSE 文件。

@@ -63,4 +63,3 @@ skills-lock.json
 backups/
 artifacts/*
 !artifacts/catalog-desktop.png
-!artifacts/catalog-mobile.png

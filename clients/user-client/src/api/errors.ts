@@ -9,6 +9,8 @@ const messages: Record<string, string> = {
   DB_UPDATE: '更新失败，请稍后重试',
   DB_BEGIN: '服务繁忙，请稍后重试',
   RATE_LIMITED: '操作过于频繁，请稍后再试',
+  SERVER_BUSY: '服务繁忙，请稍后重试',
+  REQUEST_TOO_LARGE: '请求内容过大，请减少提交内容',
   USER_NOT_FOUND: '手机号或密码错误',
   PASSWD_ERROR: '手机号或密码错误',
   INVALID_CREDENTIALS: '手机号或密码错误',

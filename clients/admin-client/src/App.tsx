@@ -4,7 +4,7 @@ import { adminApi, type AdminSession, type CatalogPayload, type ReminderRow, typ
 import catLogo from './assets/hyperticket-cat.png';
 
 type Tab = 'overview' | 'catalog' | 'reminders' | 'users';
-const errorText: Record<string, string> = { ADMIN_UNAUTHORIZED: '登录已过期，请重新登录', ADMIN_INVALID_CREDENTIALS: '管理员账号或密码错误', DB_UNAVAILABLE: '数据服务暂时不可用，请稍后重试', DB_QUERY: '读取数据失败，请稍后重试', DB_INSERT: '保存数据失败，请检查内容后重试', DB_UPDATE: '更新数据失败，请稍后重试', INVALID_INPUT: '提交内容有误，请检查表单', ALREADY_IN_STATE: '该用户已经处于目标状态', TICKET_NOT_FOUND: '票务不存在或已被删除', USER_NOT_FOUND: '用户不存在', PASSWORD_TOO_WEAK: '密码需包含大小写字母和数字', PASSWORD_SAME_AS_OLD: '新密码不能与默认密码相同', RATE_LIMITED: '操作过于频繁，请稍后重试' };
+const errorText: Record<string, string> = { ADMIN_UNAUTHORIZED: '登录已过期，请重新登录', ADMIN_INVALID_CREDENTIALS: '管理员账号或密码错误', DB_UNAVAILABLE: '数据服务暂时不可用，请稍后重试', DB_QUERY: '读取数据失败，请稍后重试', DB_INSERT: '保存数据失败，请检查内容后重试', DB_UPDATE: '更新数据失败，请稍后重试', INVALID_INPUT: '提交内容有误，请检查表单', ALREADY_IN_STATE: '该用户已经处于目标状态', TICKET_NOT_FOUND: '票务不存在或已被删除', USER_NOT_FOUND: '用户不存在', PASSWORD_TOO_WEAK: '密码需包含大小写字母和数字', PASSWORD_SAME_AS_OLD: '新密码不能与默认密码相同', RATE_LIMITED: '操作过于频繁，请稍后重试', SERVER_BUSY: '服务繁忙，请稍后重试', REQUEST_TOO_LARGE: '请求内容过大，请减少提交内容' };
 const explain = (error: unknown) => { const raw = error instanceof Error ? error.message : typeof error === 'string' ? error : ''; if (errorText[raw]) return errorText[raw]; if (/^[A-Z0-9_]+$/.test(raw) || !/[\u3400-\u9fff]/.test(raw)) return '操作失败，请稍后重试'; return raw; };
 
 export default function App() {

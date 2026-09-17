@@ -1,4 +1,3 @@
-import { invoke } from '@tauri-apps/api/core';
 import type { BackendResponse } from '../types';
 import { toChineseError } from './errors';
 
@@ -16,7 +15,8 @@ class BrowserWebSocketClient {
   private readonly url = import.meta.env.VITE_WS_URL || BrowserWebSocketClient.defaultUrl();
 
   private static defaultUrl() {
-    if (import.meta.env.DEV) return 'ws://localhost:8080/ws';
+    const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+    if (import.meta.env.DEV || isTauri) return 'ws://localhost:8080/ws';
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${protocol}//${window.location.host}/ws`;
   }
@@ -78,21 +78,5 @@ class BrowserWebSocketClient {
   }
 }
 
-const tauriClient = {
-  send<T extends BackendResponse>(payload: object): Promise<T> {
-    return invoke<BackendResponse>('send_request', { payload }).then(resp => {
-      if (resp.status !== 'OK') {
-        throw new Error(toChineseError(resp.reason));
-      }
-      return resp as T;
-    });
-  },
-
-  isConnected(): Promise<boolean> {
-    return invoke<boolean>('check_connection');
-  },
-};
-
-const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
-export const wsClient = isTauri ? tauriClient : new BrowserWebSocketClient();
+export const wsClient = new BrowserWebSocketClient();
 export default wsClient;

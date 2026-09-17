@@ -6,6 +6,8 @@ const ERROR_MAP: Record<string, string> = {
   INVALID_INPUT:      '请求参数有误，请检查填写内容',
   UNKNOWN_TYPE:       '请求类型不支持',
   RATE_LIMITED:       '操作过于频繁，请稍后再试',
+  SERVER_BUSY:        '服务繁忙，请稍后重试',
+  REQUEST_TOO_LARGE:  '请求内容过大，请减少提交内容',
 
   // ── 认证 ────────────────────────────────────────────────────────────────────
   UNAUTHORIZED:             '登录已过期，请重新登录',

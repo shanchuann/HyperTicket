@@ -1,4 +1,3 @@
-import { invoke } from '@tauri-apps/api/core';
 import { browserSend } from './browserTransport';
 
 export type Response = { status: 'OK' | 'ERR'; reason?: string; [key: string]: unknown };
@@ -10,9 +9,7 @@ export type CatalogPayload = { events:Array<Record<string,unknown>>; venues:Arra
 export type ReminderRow = { reminder_id:number; title:string; email:string; remind_at:string; status:string; attempt_count:number; last_error:string; updated_at:string };
 
 const send = async <T extends Response>(payload: object) => {
-  const response = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
-    ? await invoke<T>('send_request', { payload })
-    : await browserSend<T>(payload);
+  const response = await browserSend<T>(payload);
   if (response.status !== 'OK') throw new Error(response.reason || '请求失败');
   return response;
 };

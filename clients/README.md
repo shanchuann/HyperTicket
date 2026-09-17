@@ -13,7 +13,7 @@
 
 ### 浏览器模式
 
-浏览器通过 `websocket-bridge` 将 WebSocket 消息转发到 C++ TCP `7000`：
+浏览器通过 `websocket-bridge` 将 WebSocket 消息转发到仅内网可达的 C++ TCP `7000`：
 
 ```powershell
 cd websocket-bridge
@@ -29,11 +29,11 @@ npm install
 npm run dev -- --port 5174
 ```
 
-默认桥接地址为 `ws://127.0.0.1:8080`。详情见 [WebSocket 集成指南](../docs/WEBSOCKET_INTEGRATION.md)。
+默认桥接地址为 `ws://127.0.0.1:8080/ws`。详情见 [WebSocket 集成指南](../docs/WEBSOCKET_INTEGRATION.md)。
 
 ### Tauri 桌面模式
 
-Tauri 的 Rust 层直连后端 TCP，无需 WebSocket 桥接：
+Tauri 与浏览器共用 WebSocket 传输层，因此本地开发也需要先启动桥接：
 
 ```powershell
 cd clients\user-client
@@ -41,7 +41,7 @@ npm install
 npm run tauri dev
 ```
 
-管理端使用相同命令，只需切换到 `clients/admin-client`。Windows 需要 Rust、Node.js、Visual Studio C++ Build Tools 和 WebView2。
+管理端使用相同命令，只需切换到 `clients/admin-client`。Windows 需要 Rust、Node.js、Visual Studio C++ Build Tools 和 WebView2。发布构建必须通过仓库变量 `PUBLIC_WS_URL` 注入公开的 `wss://` 地址。
 
 ## 用户端页面
 

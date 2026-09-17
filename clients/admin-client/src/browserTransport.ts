@@ -13,7 +13,8 @@ class AdminBrowserTransport {
 
   private url() {
     if (import.meta.env.VITE_WS_URL) return import.meta.env.VITE_WS_URL;
-    if (import.meta.env.DEV) return 'ws://localhost:8080/ws';
+    const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+    if (import.meta.env.DEV || isTauri) return 'ws://localhost:8080/ws';
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     return `${protocol}//${window.location.host}/ws`;
   }

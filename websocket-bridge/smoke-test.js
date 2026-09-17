@@ -20,7 +20,13 @@ const backend = net.createServer(socket => {
     for (const line of lines) {
       if (!line.trim()) continue;
       const request = JSON.parse(line);
-      socket.write(`${JSON.stringify({ status: 'OK', type: request.type, hasGatewayIp: Boolean(request._gateway_client_ip) })}\n`);
+      socket.write(`${JSON.stringify({
+        status: 'OK',
+        type: request.type,
+        hasGatewayIp: Boolean(request._gateway_client_ip),
+        clientIp: request._gateway_client_ip,
+        gatewayToken: request._gateway_token,
+      })}\n`);
     }
   });
 });
@@ -47,7 +53,10 @@ function waitForBridge(child) {
 
 function websocketRoundTrip() {
   return new Promise((resolve, reject) => {
-    const socket = new WebSocket(`ws://127.0.0.1:${bridgePort}/ws`);
+    const socket = new WebSocket(`ws://127.0.0.1:${bridgePort}/ws`, {
+      origin: 'http://allowed.test',
+      headers: { 'x-forwarded-for': '203.0.113.55' },
+    });
     socket.once('open', () => socket.send(JSON.stringify({ type: 4 })));
     socket.once('message', raw => {
       try {
@@ -55,6 +64,8 @@ function websocketRoundTrip() {
         assert.equal(response.status, 'OK');
         assert.equal(response.type, 4);
         assert.equal(response.hasGatewayIp, true);
+        assert.equal(response.clientIp, '127.0.0.1');
+        assert.equal(response.gatewayToken, 'bridge-test-token');
         socket.close();
         resolve();
       } catch (error) {
@@ -62,6 +73,55 @@ function websocketRoundTrip() {
       }
     });
     socket.once('error', reject);
+  });
+}
+
+function rejectedOrigin() {
+  return new Promise((resolve, reject) => {
+    const socket = new WebSocket(`ws://127.0.0.1:${bridgePort}/ws`, {
+      origin: 'http://blocked.test',
+    });
+    socket.once('open', () => reject(new Error('Blocked origin connected')));
+    socket.once('unexpected-response', (_, response) => {
+      try {
+        assert.equal(response.statusCode, 403);
+        resolve();
+      } catch (error) {
+        reject(error);
+      }
+    });
+    socket.once('error', () => {});
+  });
+}
+
+function rejectsInvalidProxyPrefix() {
+  return new Promise((resolve, reject) => {
+    const child = spawn(process.execPath, ['server.js'], {
+      cwd: __dirname,
+      env: {
+        ...process.env,
+        WEB_PORT: String(bridgePort + 1),
+        TCP_PORT: String(backendPort),
+        TRUSTED_PROXY_ADDRESSES: '127.0.0.1/33',
+      },
+      stdio: ['ignore', 'ignore', 'pipe'],
+    });
+    let stderr = '';
+    const timeout = setTimeout(() => {
+      child.kill('SIGKILL');
+      reject(new Error('Bridge accepted an invalid trusted proxy prefix'));
+    }, 3000);
+    child.stderr.on('data', chunk => { stderr += chunk.toString(); });
+    child.once('exit', code => {
+      clearTimeout(timeout);
+      try {
+        assert.notEqual(code, 0);
+        assert.match(stderr, /Invalid trusted proxy prefix/);
+        resolve();
+      } catch (error) {
+        reject(error);
+      }
+    });
   });
 }
 
@@ -76,6 +136,9 @@ async function main() {
       TCP_PORT: String(backendPort),
       WEB_ROOT: path.join(repositoryRoot, 'clients', 'user-client', 'dist'),
       ADMIN_ROOT: path.join(repositoryRoot, 'clients', 'admin-client', 'dist'),
+      HYPERTICKET_GATEWAY_TOKEN: 'bridge-test-token',
+      WS_ALLOWED_ORIGINS: 'http://allowed.test',
+      TRUSTED_PROXY_ADDRESSES: '',
     },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
@@ -95,6 +158,8 @@ async function main() {
     assert.match(await admin.text(), /\/admin\/assets\//);
 
     await websocketRoundTrip();
+    await rejectedOrigin();
+    await rejectsInvalidProxyPrefix();
     console.log('Web image smoke test passed');
   } finally {
     bridge.kill('SIGTERM');

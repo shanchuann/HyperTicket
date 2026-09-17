@@ -19,6 +19,18 @@ jobs:
           --health-interval 5s
           --health-timeout 3s
           --health-retries 10
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: ci-root
+          MYSQL_DATABASE: hyperticket
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -pci-root"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
 
     steps:
       - name: Checkout
@@ -33,7 +45,8 @@ jobs:
             libjsoncpp-dev \
             libmysqlclient-dev \
             libhiredis-dev \
-            redis-tools
+            redis-tools \
+            default-mysql-client
 
       - name: Verify Redis service
         run: redis-cli -h 127.0.0.1 -p 6379 ping | grep -Fx PONG
@@ -46,6 +59,40 @@ jobs:
 
       - name: Run unit tests
         run: ctest --test-dir build --output-on-failure
+
+      - name: Bootstrap current database schema
+        run: |
+          cp config.example.json config.json
+          cat > .env <<'EOF'
+          DB_HOST=127.0.0.1
+          DB_PORT=3306
+          DB_USER=root
+          DB_PASSWORD=ci-root
+          DB_NAME=hyperticket
+          REDIS_HOST=127.0.0.1
+          REDIS_PORT=6379
+          REDIS_ENABLED=true
+          HYPERTICKET_VERIFICATION_MOCK_SMS_ENABLED=true
+          HYPERTICKET_VERIFICATION_EXPOSE_MOCK_CODE=true
+          EOF
+          bash scripts/bootstrap-schema.sh
+          MYSQL_PWD=ci-root mysql -h 127.0.0.1 -uroot hyperticket -e \
+            "INSERT INTO tickets(title,venue,total_seats,available_seats,event_date,status,category,price,city) VALUES('CI simulated payment','CI venue',10,10,DATE_ADD(CURDATE(),INTERVAL 7 DAY),1,'concert',100,'CI');"
+
+      - name: Run TCP and simulated payment end-to-end test
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p logs
+          ./bin/ser > logs/ci-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true; wait "$server_pid" 2>/dev/null || true' EXIT
+          for _ in $(seq 1 30); do
+            if bash -c '</dev/tcp/127.0.0.1/7000' 2>/dev/null; then break; fi
+            sleep 1
+          done
+          bash -c '</dev/tcp/127.0.0.1/7000'
+          bash scripts/run-payment-e2e.sh
 
   web-build-and-test:
     runs-on: ubuntu-latest
@@ -61,6 +108,7 @@ jobs:
           cache-dependency-path: |
             clients/user-client/package-lock.json
             clients/admin-client/package-lock.json
+            frontend/package-lock.json
             websocket-bridge/package-lock.json
 
       - name: Build user web client
@@ -71,6 +119,37 @@ jobs:
         working-directory: clients/admin-client
         run: npm ci && npm run build:web
 
+      - name: Build and lint compatibility frontend
+        working-directory: frontend
+        run: npm ci && npm run build && npm run lint
+
       - name: Test static server and WebSocket bridge
         working-directory: websocket-bridge
         run: npm ci && npm test
+
+  tauri-check:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Tauri system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: |
+            clients/user-client/src-tauri
+            clients/admin-client/src-tauri
+
+      - name: Check user desktop shell
+        run: cargo check --manifest-path clients/user-client/src-tauri/Cargo.toml --locked
+
+      - name: Check admin desktop shell
+        run: cargo check --manifest-path clients/admin-client/src-tauri/Cargo.toml --locked

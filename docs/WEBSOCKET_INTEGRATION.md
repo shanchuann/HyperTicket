@@ -1,13 +1,13 @@
 # HyperTicket WebSocket 集成指南
 
-浏览器无法直接访问 HyperTicket 的 TCP JSON Lines 协议，因此开发环境使用 Node.js 桥接服务在 WebSocket 和 TCP 之间透明转发。Tauri 桌面模式由 Rust 层直连 TCP，不经过该桥接。
+浏览器和 Tauri 桌面端统一使用 WebSocket。Node.js 桥接服务负责静态资源和 WebSocket 到 TCP JSON Lines 的转发，C++ TCP 端口不直接暴露给终端用户。
 
 ## 架构
 
 ```text
-用户端 http://localhost:5173 ─┐
+用户端 / 管理端 / Tauri ──────┐
                               ├─ WebSocket ws://localhost:8080/ws
-管理端 http://localhost:5174 ─┘          │
+                              ┘          │
                                          ▼
                               websocket-bridge (Node.js)
                                          │ TCP 127.0.0.1:7000
@@ -52,6 +52,13 @@ npm run dev -- --port 5174
 | `WEB_PORT` | `8080` | HTTP 与 WebSocket 监听端口（兼容旧 `WS_PORT`） |
 | `TCP_HOST` | `127.0.0.1` | C++ 服务地址 |
 | `TCP_PORT` | `7000` | C++ 服务端口 |
+| `HYPERTICKET_GATEWAY_TOKEN` | 空 | 与 C++ 服务共享的网关令牌；生产环境必须设置 |
+| `WS_ALLOWED_ORIGINS` | 空 | 允许的 Origin，逗号分隔；生产环境必须显式设置 |
+| `TRUSTED_PROXY_ADDRESSES` | 空 | 可提供 `X-Forwarded-For` 的代理 IP/CIDR |
+| `WS_MAX_CONNECTIONS` | `1000` | Bridge 总连接上限 |
+| `WS_MAX_CONNECTIONS_PER_IP` | `20` | 单客户端 IP 连接上限 |
+| `WS_MAX_MESSAGE_BYTES` | `65536` | 单条 WebSocket 消息上限 |
+| `WS_MAX_PENDING_BYTES` | `262144` | 单连接待发送缓冲上限 |
 
 客户端通过 `VITE_WS_URL` 覆盖默认桥接地址：
 
@@ -59,7 +66,7 @@ npm run dev -- --port 5174
 VITE_WS_URL=ws://127.0.0.1:8080/ws
 ```
 
-桥接层不解释业务协议。它为每个 WebSocket 连接建立对应 TCP 连接，把 JSON 文本补齐换行符后转发，并把后端按行返回的 JSON 发回浏览器。
+桥接层不解释业务协议。它为每个 WebSocket 连接建立对应 TCP 连接，注入受共享令牌保护的客户端 IP，再把后端按行返回的 JSON 发回客户端。默认不信任 `X-Forwarded-For`。
 
 ## 协议示例
 
@@ -81,4 +88,4 @@ VITE_WS_URL=ws://127.0.0.1:8080/ws
 
 ## 生产边界
 
-生产环境应在反向代理或网关处启用 HTTPS/WSS，限制 Origin、连接数、消息大小和频率，并配置超时、访问日志与真实客户端 IP 传递。TCP `7000` 不应直接暴露到公网。桥接本身不替代认证、风控或应用层授权。
+生产环境必须使用 HTTPS/WSS，并同时配置 Bridge 与后端相同的 `HYPERTICKET_GATEWAY_TOKEN`。`WS_ALLOWED_ORIGINS` 至少包含 Web 站点；桌面包按平台需要加入 `http://tauri.localhost` 和 `tauri://localhost`。只有受信反向代理地址应写入 `TRUSTED_PROXY_ADDRESSES`。TCP `7000` 只在 Compose 内网暴露，桥接本身不替代认证、风控或应用层授权。

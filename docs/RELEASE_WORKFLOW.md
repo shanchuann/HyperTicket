@@ -52,7 +52,7 @@ cp deploy/.env.production.example deploy/.env.production
 chmod 600 deploy/.env.production
 ```
 
-编辑 `deploy/.env.production`，至少设置现有 MySQL 的地址、账号与密码。发布流程不会自动执行数据库迁移或种子脚本；涉及 schema 的版本必须先按迁移说明处理。
+编辑 `deploy/.env.production`，至少设置现有 MySQL 的地址、账号与密码、随机网关令牌和 `WS_ALLOWED_ORIGINS`。发布流程不会自动执行数据库迁移或种子脚本；当前后端要求 v11，可用 `scripts/bootstrap-schema.sh` 初始化新库，或对 v10 库执行 `scripts/apply-schema-version-migration.sh`。
 
 Linux 宿主机连接远程 Windows MySQL 时直接填写 Windows 可达 IP，不要使用 `127.0.0.1`。`host.docker.internal` 在 Docker Desktop 中可用，在普通 Linux Docker 上通常需要改为实际地址。
 
@@ -76,6 +76,7 @@ Repository variable（仓库级，不要只配置为 Environment variable）：
 | 名称 | 值 |
 |---|---|
 | `AUTO_DEPLOY_ENABLED` | `true` |
+| `PUBLIC_WS_URL` | 桌面安装包使用的公开 `wss://.../ws` 地址；为空会阻止发布 |
 
 Environment secrets：
 
@@ -101,6 +102,8 @@ git pull --ff-only -> docker compose pull -> docker compose up -d
 ## 安全边界
 
 - 不要把数据库密码、SMTP 授权码或 SSH 私钥写入仓库。
-- 服务端 TCP `7000` 当前用于 Tauri 客户端直连；公网部署前应增加 TLS 网关和访问控制。
+- 服务端 TCP `7000` 只在 Compose 内网供 WebSocket Bridge 使用，不映射到公网。
 - Web 公网入口应由 Nginx/Caddy 提供 HTTPS/WSS，再反向代理到 Web 容器 `8080`。
+- `HYPERTICKET_GATEWAY_TOKEN` 必须为足够长的随机值，Bridge 与后端保持一致；`WS_ALLOWED_ORIGINS` 应包含 Web 域名和实际桌面 WebView Origin。
+- 当前手机号验证码和支付均为模拟流程；不要配置或宣称真实短信、真实扣款能力。
 - 自动部署账号仅授予目标目录和 Docker 所需的最小权限。

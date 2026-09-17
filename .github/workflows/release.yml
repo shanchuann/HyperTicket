@@ -171,7 +171,13 @@ jobs:
 
       - name: Build Tauri bundles
         working-directory: ${{ matrix.directory }}
-        run: npm run tauri build
+        env:
+          VITE_WS_URL: ${{ vars.PUBLIC_WS_URL }}
+        run: |
+          if (-not $env:VITE_WS_URL -or -not $env:VITE_WS_URL.StartsWith('wss://')) {
+            throw 'Repository variable PUBLIC_WS_URL must be a non-empty wss:// URL'
+          }
+          npm run tauri build
 
       - name: Upload installers to draft release
         shell: pwsh

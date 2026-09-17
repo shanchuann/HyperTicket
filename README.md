@@ -43,8 +43,7 @@ HyperTicket 是一个 C++17 票务系统实践项目，覆盖活动目录、场�
 flowchart TB
     User[用户端<br/>React + TypeScript] --> Browser{运行模式}
     Admin[管理端<br/>React + TypeScript] --> Browser
-    Browser -->|浏览器 WebSocket :8080| Bridge[Node.js WebSocket-TCP Bridge]
-    Browser -->|Tauri 2 原生 TCP| Server[C++17 Server :7000]
+    Browser -->|浏览器 / Tauri WebSocket :8080| Bridge[Node.js WebSocket-TCP Bridge]
     Bridge -->|TCP JSON Lines :7000| Server
     Server --> Domain[TicketService / Repository]
     Domain --> MySQL[(Windows MySQL 8)]
@@ -52,7 +51,7 @@ flowchart TB
     Server --> Scheduler[订单回收 / 支付结算 / 开售提醒]
 ```
 
-浏览器不能直接连接 TCP，需通过 `websocket-bridge` 转发；Tauri 桌面端由 Rust 命令直接访问后端 TCP。协议为以换行分隔的 JSON 消息。
+浏览器与 Tauri 桌面端统一通过 `websocket-bridge` 访问后端；TCP `7000` 只供桥接所在的可信内网使用。桥接与后端之间采用以换行分隔的 JSON 消息。
 
 ## 开发环境
 
@@ -94,14 +93,13 @@ cp config.example.json config.json
 cp .env.example .env
 ```
 
-在 `.env` 中填写 Windows MySQL 连接信息。全新数据库先创建基础结构，再应用 v10 目录：
+在 `.env` 中填写 Windows MySQL 连接信息。全新数据库使用统一脚本创建当前 v11 结构：
 
 ```bash
-mysql -h 127.0.0.1 -u root -p < db/init.sql
-./scripts/migrate-and-seed-v10.sh
+bash scripts/bootstrap-schema.sh
 ```
 
-迁移脚本会先把业务表数据备份到 `backups/`，保留用户、管理员、验证状态、Session 和认证安全配置，然后重建演示目录。种子脚本要求演示账号 `13008569663` 已存在。详情见 [v10 目录运行手册](docs/catalog-v10-runbook.md)。
+已有 v10 数据库执行 `bash scripts/apply-schema-version-migration.sh`。需要刷新演示目录时再运行 `scripts/migrate-and-seed-v10.sh`；该脚本会先备份业务表，详情见 [v10 目录运行手册](docs/catalog-v10-runbook.md)。
 
 ### 3. 构建并启动后端
 
@@ -149,7 +147,7 @@ npm install
 npm run tauri dev
 ```
 
-管理端将路径替换为 `clients/admin-client`。Tauri 模式不需要启动 WebSocket 桥接。
+管理端将路径替换为 `clients/admin-client`。Tauri 模式同样依赖 WebSocket 桥接；生产构建必须设置 `VITE_WS_URL=wss://.../ws`。
 
 ## 核心流程
 
@@ -201,7 +199,7 @@ cd clients/user-client; npm run build
 cd ../admin-client; npm run build
 ```
 
-当前回归基线为：CTest `12/12`、模拟支付端到端测试通过、两端 React 生产构建通过，并完成桌面与移动浏览器页面检查。GitHub Actions 会在 `main` 的 push 和 pull request 上构建后端并运行 CTest，Redis 由 CI 服务容器提供。
+当前回归基线为：CTest `13/13`、模拟支付端到端测试通过、三套 React 生产构建与兼容前端 lint 通过。GitHub Actions 还会启动 MySQL/Redis，验证空库初始化、真实 TCP 流程、模拟支付和两套 Tauri 壳层。
 
 ## 目录结构
 

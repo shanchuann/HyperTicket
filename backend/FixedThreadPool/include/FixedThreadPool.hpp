@@ -51,15 +51,19 @@ namespace shanchuan
         void stop() {
             std::call_once(_stop_once_flag, [this]() { stop_thread_group(); });
         }
-        void add_task(const Task &task) {
-            if (_task_queue.put(task) != QueueResult::Ok) {
+        bool add_task(const Task &task) {
+            if (_task_queue.try_put(task) != QueueResult::Ok) {
                 LOG_ERROR << "[FixedThreadPool] add_task(): queue full or stopping, task dropped";
+                return false;
             }
+            return true;
         }
-        void add_task(Task &&task) {
-            if (_task_queue.put(std::forward<Task>(task)) != QueueResult::Ok) {
+        bool add_task(Task &&task) {
+            if (_task_queue.try_put(std::forward<Task>(task)) != QueueResult::Ok) {
                 LOG_ERROR << "[FixedThreadPool] add_task(): queue full or stopping, task dropped";
+                return false;
             }
+            return true;
         }
         template <typename F, typename... Args>
         auto submit(F &&f, Args &&...args) {

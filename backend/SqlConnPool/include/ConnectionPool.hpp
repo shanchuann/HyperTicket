@@ -5,8 +5,8 @@
 #include <list>
 #include <mutex>
 #include <chrono>
+#include <condition_variable>
 #include <mysql/mysql.h>
-#include "Semaphore.hpp"
 
 namespace shanchuan
 {
@@ -28,7 +28,7 @@ namespace shanchuan
 
         // 新增：连接健康检查和维护
         bool ping(MYSQL *conn);           // 检查连接是否存活
-        bool reconnect(MYSQL *conn);      // 重连断开的连接
+        MYSQL *reconnect(MYSQL *conn);    // 丢弃失效句柄并返回新连接
         void healthCheck();               // 定期健康检查所有空闲连接
 
     private:
@@ -49,16 +49,17 @@ namespace shanchuan
         int m_MaxConn = 0;
         int m_CurConn = 0;
         int m_FreeConn = 0;
-        std::mutex m_mutex;
+        mutable std::mutex m_mutex;
+        std::condition_variable m_available;
         std::list<MYSQL *> connList;
-        Semaphore sem_reserve;
+        int m_LostConn = 0;
     };
 
     // RAII helper: borrows a connection on construction, returns it on destruction.
     class ConnectionGuard
     {
     public:
-        ConnectionGuard(MYSQL **con, ConnectionPool *connPool);
+        ConnectionGuard(MYSQL **con, ConnectionPool *connPool, int timeoutMs = 1000);
         ~ConnectionGuard();
         ConnectionGuard(const ConnectionGuard &) = delete;
         ConnectionGuard &operator=(const ConnectionGuard &) = delete;

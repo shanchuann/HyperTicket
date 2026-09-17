@@ -62,6 +62,16 @@ namespace shanchuan
             return add(std::forward<T>(task));
         }
 
+        template <typename F>
+        QueueResult try_put(F &&task) {
+            std::lock_guard<std::mutex> lock(_mutex);
+            if (_stop_flag) return QueueResult::Stopped;
+            if (is_full()) return QueueResult::Full;
+            _task_queue.emplace_back(std::forward<F>(task));
+            _cv_not_empty.notify_one();
+            return QueueResult::Ok;
+        }
+
         /*
         void take(T *task) {
             assert(task != nullptr);

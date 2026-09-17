@@ -2,6 +2,7 @@
 #define HYPERTICKET_SCHEMA_INITIALIZER_HPP
 
 #include <algorithm>
+#include <exception>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -13,12 +14,13 @@
 
 namespace hyperticket
 {
-    // 数据库初始化：确保配置的库可连接、可使用。schema 的唯一来源是 db/init.sql，
-    // 由运维手动执行；此处只验证库可用（与原 ensureDatabaseAndTables 行为一致），
-    // 不在启动时自动改表结构，避免与 init.sql 产生分歧。
+    // 数据库启动闸门：只验证连接和 schema 版本，不在服务启动时改表。
+    // 新库使用 scripts/bootstrap-schema.sh，已有 v10 库应用 v11 迁移。
     class SchemaInitializer
     {
     public:
+        static constexpr int kExpectedSchemaVersion = 11;
+
         // 返回 true 表示数据库已就绪可用。
         static bool ensureReady(const DbConfig &db)
         {
@@ -54,9 +56,61 @@ namespace hyperticket
             if (!ok)
             {
                 LOG_ERROR << "ensure database failed: " << mysql_error(conn);
+                mysql_close(conn);
+                return false;
+            }
+
+            if (mysql_query(conn, "SELECT COALESCE(MAX(version),0) FROM schema_migrations") != 0)
+            {
+                LOG_ERROR << "schema version unavailable; apply db/migrate_v11_schema_version.sql: "
+                          << mysql_error(conn);
+                mysql_close(conn);
+                return false;
+            }
+            MYSQL_RES *result = mysql_store_result(conn);
+            MYSQL_ROW row = result ? mysql_fetch_row(result) : nullptr;
+            int version = 0;
+            try
+            {
+                version = row && row[0] ? std::stoi(row[0]) : 0;
+            }
+            catch (const std::exception &error)
+            {
+                LOG_ERROR << "invalid schema version value: " << error.what();
+                if (result) mysql_free_result(result);
+                mysql_close(conn);
+                return false;
+            }
+            if (result) mysql_free_result(result);
+            if (version != kExpectedSchemaVersion)
+            {
+                LOG_ERROR << "schema version mismatch: expected " << kExpectedSchemaVersion
+                          << ", found " << version;
+                mysql_close(conn);
+                return false;
+            }
+            if (mysql_query(conn,
+                    "SELECT COUNT(*) FROM information_schema.COLUMNS "
+                    "WHERE TABLE_SCHEMA=DATABASE() AND "
+                    "((TABLE_NAME='payments' AND COLUMN_NAME='action_token') OR "
+                    "(TABLE_NAME='refunds' AND COLUMN_NAME='action_token'))") != 0)
+            {
+                LOG_ERROR << "schema compatibility check failed: " << mysql_error(conn);
+                mysql_close(conn);
+                return false;
+            }
+            result = mysql_store_result(conn);
+            row = result ? mysql_fetch_row(result) : nullptr;
+            const bool hasActionTokens = row && row[0] && std::string(row[0]) == "2";
+            if (result) mysql_free_result(result);
+            if (!hasActionTokens)
+            {
+                LOG_ERROR << "schema v11 is incomplete; rerun db/migrate_v11_schema_version.sql";
+                mysql_close(conn);
+                return false;
             }
             mysql_close(conn);
-            return ok;
+            return true;
         }
     };
 } // namespace hyperticket

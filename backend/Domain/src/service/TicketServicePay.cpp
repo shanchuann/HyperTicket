@@ -175,42 +175,54 @@ namespace hyperticket
     {
         if (paymentProviders_.empty()) return false;
 
-        MYSQL *conn = nullptr;
-        shanchuan::ConnectionGuard raii(&conn, pool_);
-        if (!conn) return false;
+        std::vector<Payment> duePayments;
+        std::vector<Refund> dueRefunds;
+        {
+            MYSQL *conn = nullptr;
+            shanchuan::ConnectionGuard raii(&conn, pool_);
+            if (!conn) return false;
+            duePayments = payRepo_.listDuePayments(conn, 200);
+            dueRefunds = payRepo_.listDueRefunds(conn, 200);
+        }
 
-        Txn txn(conn);
-        if (!txn.ok()) return false;
-
-        const std::vector<Payment> duePayments = payRepo_.lockDuePayments(conn, 200);
+        constexpr int kProviderLeaseMs = 30000;
         int created = 0, succeeded = 0, failed = 0, closed = 0, refunded = 0;
         for (const Payment &candidate : duePayments)
         {
-            // All order/payment paths lock in reservation -> payment order.
-            Reservation lockedReservation;
-            if (!resvRepo_.lockOwnedForUpdate(conn, candidate.reservationId,
-                                              candidate.userId, lockedReservation))
-                continue;
-            Payment payment;
-            if (!payRepo_.lockById(conn, candidate.id, payment) ||
-                (payment.status != "CREATED" && payment.status != "PROCESSING"))
-                continue;
-            const auto providerIt = paymentProviders_.find(payment.provider);
+            const auto providerIt = paymentProviders_.find(candidate.provider);
             if (providerIt == paymentProviders_.end())
             {
-                LOG_ERROR << "payment provider unavailable: " << payment.provider
-                          << " payment=" << payment.paymentNo;
+                LOG_ERROR << "payment provider unavailable: " << candidate.provider
+                          << " payment=" << candidate.paymentNo;
                 continue;
             }
-            IPaymentProvider *paymentProvider = providerIt->second;
 
-            const std::string &orderStatus = lockedReservation.status;
-            if (payment.status == "CREATED")
+            Payment payment;
+            std::string orderStatus;
+            std::string actionToken;
             {
-                if (orderStatus != "PENDING")
+                MYSQL *conn = nullptr;
+                shanchuan::ConnectionGuard raii(&conn, pool_);
+                if (!conn) return false;
+                Txn txn(conn);
+                if (!txn.ok()) return false;
+
+                Reservation reservation;
+                if (!resvRepo_.lockOwnedForUpdate(conn, candidate.reservationId,
+                                                  candidate.userId, reservation) ||
+                    !payRepo_.lockById(conn, candidate.id, payment) ||
+                    (payment.status != "CREATED" && payment.status != "PROCESSING"))
+                {
+                    txn.rollback();
+                    continue;
+                }
+                orderStatus = reservation.status;
+
+                if (payment.status == "CREATED" && orderStatus != "PENDING")
                 {
                     if (!payRepo_.transition(conn, payment.id, "CREATED", "CLOSED", "") ||
-                        !payRepo_.appendEvent(conn, payment.id, "CREATED", "CLOSED", "SYSTEM", "order not payable"))
+                        !payRepo_.appendEvent(conn, payment.id, "CREATED", "CLOSED", "SYSTEM", "order not payable") ||
+                        !txn.commit())
                     {
                         txn.rollback();
                         return false;
@@ -219,44 +231,106 @@ namespace hyperticket
                     continue;
                 }
 
-                const PaymentProviderResult result = paymentProvider->createPayment(providerRequest(payment));
-                const std::string next = result.accepted ? providerStateName(result.state) : "FAILED";
-                if (!canTransitionPayment("CREATED", next) ||
-                    !payRepo_.transition(conn, payment.id, "CREATED", next,
-                                         result.providerTransactionId, paySettleDelayMs_) ||
-                    !payRepo_.appendEvent(conn, payment.id, "CREATED", next, "PROVIDER", result.reason))
+                if (!payRepo_.claimPaymentAction(conn, payment.id, payment.status,
+                                                 kProviderLeaseMs, actionToken) ||
+                    !txn.commit())
                 {
                     txn.rollback();
-                    return false;
+                    continue;
+                }
+            }
+
+            PaymentProviderResult result;
+            bool providerException = false;
+            try
+            {
+                if (payment.status == "CREATED")
+                    result = providerIt->second->createPayment(providerRequest(payment));
+                else if (orderStatus != "PENDING")
+                    result = providerIt->second->closePayment(providerRequest(payment));
+                else
+                    result = providerIt->second->queryPayment(providerRequest(payment));
+            }
+            catch (const std::exception &error)
+            {
+                providerException = true;
+                result.reason = std::string("provider_exception:") + error.what();
+            }
+            catch (...)
+            {
+                providerException = true;
+                result.reason = "provider_exception:unknown";
+            }
+
+            MYSQL *conn = nullptr;
+            shanchuan::ConnectionGuard raii(&conn, pool_);
+            if (!conn) return false;
+            Txn txn(conn);
+            if (!txn.ok()) return false;
+            Reservation lockedReservation;
+            Payment current;
+            if (!resvRepo_.lockOwnedForUpdate(conn, payment.reservationId,
+                                              payment.userId, lockedReservation) ||
+                !payRepo_.lockById(conn, payment.id, current) ||
+                current.status != payment.status)
+            {
+                txn.rollback();
+                continue;
+            }
+
+            if (providerException)
+            {
+                if (!payRepo_.retryClaimedPayment(conn, payment.id, payment.status,
+                                                  actionToken, paySettleDelayMs_) ||
+                    !payRepo_.appendEvent(conn, payment.id, payment.status, payment.status,
+                                          "PROVIDER_ERROR", result.reason) ||
+                    !txn.commit())
+                {
+                    txn.rollback();
+                    continue;
+                }
+                LOG_WARN << "payment provider call will retry: payment=" << payment.paymentNo
+                         << " reason=" << result.reason;
+                continue;
+            }
+
+            const std::string next = result.accepted ? providerStateName(result.state) : "FAILED";
+            if (payment.status == "CREATED")
+            {
+                if (!canTransitionPayment("CREATED", next) ||
+                    !payRepo_.transitionClaimed(conn, payment.id, "CREATED", actionToken,
+                                                next, result.providerTransactionId,
+                                                paySettleDelayMs_) ||
+                    !payRepo_.appendEvent(conn, payment.id, "CREATED", next, "PROVIDER", result.reason) ||
+                    !txn.commit())
+                {
+                    txn.rollback();
+                    continue;
                 }
                 ++created;
                 if (next == "FAILED") ++failed;
                 continue;
             }
 
-            PaymentProviderResult result;
-            if (orderStatus != "PENDING")
-                result = paymentProvider->closePayment(providerRequest(payment));
-            else
-                result = paymentProvider->queryPayment(providerRequest(payment));
-
-            std::string next = result.accepted ? providerStateName(result.state) : "FAILED";
             if (next == "PROCESSING")
             {
-                if (!payRepo_.transition(conn, payment.id, "PROCESSING", "PROCESSING",
-                                         result.providerTransactionId, paySettleDelayMs_))
+                if (!payRepo_.transitionClaimed(conn, payment.id, "PROCESSING", actionToken,
+                                                "PROCESSING", result.providerTransactionId,
+                                                paySettleDelayMs_) ||
+                    !txn.commit())
                 {
                     txn.rollback();
-                    return false;
+                    continue;
                 }
                 continue;
             }
             if (!canTransitionPayment("PROCESSING", next) ||
-                !payRepo_.transition(conn, payment.id, "PROCESSING", next, result.providerTransactionId) ||
+                !payRepo_.transitionClaimed(conn, payment.id, "PROCESSING", actionToken,
+                                            next, result.providerTransactionId) ||
                 !payRepo_.appendEvent(conn, payment.id, "PROCESSING", next, "PROVIDER", result.reason))
             {
                 txn.rollback();
-                return false;
+                continue;
             }
 
             if (next == "SUCCEEDED")
@@ -281,9 +355,13 @@ namespace hyperticket
             }
             else if (next == "FAILED") ++failed;
             else if (next == "CLOSED") ++closed;
+            if (!txn.commit())
+            {
+                txn.rollback();
+                return false;
+            }
         }
 
-        const std::vector<Refund> dueRefunds = payRepo_.lockDueRefunds(conn, 200);
         for (const Refund &refund : dueRefunds)
         {
             const auto providerIt = paymentProviders_.find(refund.provider);
@@ -293,6 +371,22 @@ namespace hyperticket
                           << " refund=" << refund.refundNo;
                 continue;
             }
+            std::string actionToken;
+            {
+                MYSQL *conn = nullptr;
+                shanchuan::ConnectionGuard raii(&conn, pool_);
+                if (!conn) return false;
+                Txn txn(conn);
+                if (!txn.ok()) return false;
+                if (!payRepo_.claimRefundAction(conn, refund.id, refund.status,
+                                                kProviderLeaseMs, actionToken) ||
+                    !txn.commit())
+                {
+                    txn.rollback();
+                    continue;
+                }
+            }
+
             RefundProviderRequest request;
             request.refundNo = refund.refundNo;
             request.paymentNo = refund.paymentNo;
@@ -317,16 +411,22 @@ namespace hyperticket
             const bool refundSucceeded = result.accepted &&
                 result.state == ProviderPaymentState::Succeeded;
             const int retryDelaySeconds = 1 << (refund.attemptCount < 8 ? refund.attemptCount : 8);
+
+            MYSQL *conn = nullptr;
+            shanchuan::ConnectionGuard raii(&conn, pool_);
+            if (!conn) return false;
+            Txn txn(conn);
+            if (!txn.ok()) return false;
             const bool updated = refundSucceeded
-                ? payRepo_.completeRefund(conn, refund.id, refund.status,
+                ? payRepo_.completeRefund(conn, refund.id, refund.status, actionToken,
                                           result.providerTransactionId)
-                : payRepo_.retryRefund(conn, refund,
+                : payRepo_.retryRefund(conn, refund, actionToken,
                     result.reason.empty() ? "provider_refund_failed" : result.reason,
                     retryDelaySeconds);
             if (!updated)
             {
                 txn.rollback();
-                return false;
+                continue;
             }
             if (refundSucceeded)
             {
@@ -338,12 +438,11 @@ namespace hyperticket
                 }
                 ++refunded;
             }
-        }
-
-        if (!txn.commit())
-        {
-            txn.rollback();
-            return false;
+            if (!txn.commit())
+            {
+                txn.rollback();
+                return false;
+            }
         }
 
         if (!duePayments.empty() || !dueRefunds.empty())

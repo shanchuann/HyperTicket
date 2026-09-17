@@ -225,3 +225,8 @@ target_include_directories(test_simulated_payment_provider PRIVATE
     backend/Domain/include backend/Server/include)
 target_link_libraries(test_simulated_payment_provider PRIVATE OpenSSL::Crypto)
 add_test(NAME test_simulated_payment_provider COMMAND $<TARGET_FILE:test_simulated_payment_provider>)
+
+add_executable(test_sync_queue tests/test_sync_queue.cpp)
+target_include_directories(test_sync_queue PRIVATE backend/FixedThreadPool/include)
+target_link_libraries(test_sync_queue PRIVATE Threads::Threads)
+add_test(NAME test_sync_queue COMMAND $<TARGET_FILE:test_sync_queue>)

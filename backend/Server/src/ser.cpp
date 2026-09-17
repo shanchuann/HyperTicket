@@ -33,6 +33,9 @@
 #include <sstream>
 #include <memory>
 #include <chrono>
+#include <mutex>
+#include <unordered_map>
+#include <openssl/crypto.h>
 
 using shanchuan::Buffer;
 using shanchuan::TcpConnectionPtr;
@@ -42,6 +45,58 @@ namespace
 {
     // 全局信号标志（信号处理器必须访问全局/静态变量）
     std::atomic<bool> g_sigReceived{false};
+
+    struct ConnectionContext
+    {
+        explicit ConnectionContext(int requestsPerSecond)
+            : limiter(requestsPerSecond) {}
+        hyperticket::RateLimiter limiter;
+        bool counted = true;
+    };
+
+    class ClientRateLimiter
+    {
+    public:
+        explicit ClientRateLimiter(int requestsPerSecond)
+            : requestsPerSecond_(requestsPerSecond) {}
+
+        bool allow(const std::string &client)
+        {
+            const int64_t now = hyperticket::nowMs();
+            std::lock_guard<std::mutex> lock(mutex_);
+            auto [it, inserted] = buckets_.try_emplace(client, requestsPerSecond_);
+            it->second.lastSeenMs = now;
+            if (buckets_.size() > 100000) purge(now);
+            return it->second.limiter.allow();
+        }
+
+    private:
+        struct Bucket
+        {
+            explicit Bucket(int rate) : limiter(rate), lastSeenMs(hyperticket::nowMs()) {}
+            hyperticket::RateLimiter limiter;
+            int64_t lastSeenMs;
+        };
+
+        void purge(int64_t now)
+        {
+            for (auto it = buckets_.begin(); it != buckets_.end();)
+            {
+                if (now - it->second.lastSeenMs > 300000) it = buckets_.erase(it);
+                else ++it;
+            }
+        }
+
+        int requestsPerSecond_;
+        std::mutex mutex_;
+        std::unordered_map<std::string, Bucket> buckets_;
+    };
+
+    bool secureEquals(const std::string &left, const std::string &right)
+    {
+        return !left.empty() && left.size() == right.size() &&
+               CRYPTO_memcmp(left.data(), right.data(), left.size()) == 0;
+    }
 
     void signalHandler(int)
     {
@@ -74,6 +129,15 @@ int main()
     if (!configError.empty())
     {
         LOG_FATAL << "config load failed: " << configError;
+        return 1;
+    }
+    if (cfg.server.worker_threads <= 0 || cfg.server.io_threads < 0 ||
+        cfg.server.max_connections <= 0 || cfg.server.max_requests_per_sec <= 0 ||
+        cfg.server.max_request_bytes <= 0)
+    {
+        LOG_FATAL << "invalid server limits: worker_threads, max_connections, "
+                  << "max_requests_per_sec and max_request_bytes must be positive; "
+                  << "io_threads must be non-negative";
         return 1;
     }
     if (!hyperticket::SchemaInitializer::ensureReady(cfg.db))
@@ -202,6 +266,9 @@ int main()
     std::atomic<int> connCount{0};
     const int maxConn = cfg.server.max_connections;
     const int maxRps = cfg.server.max_requests_per_sec;
+    const size_t maxRequestBytes = static_cast<size_t>(cfg.server.max_request_bytes);
+    const std::string gatewayToken = cfg.server.gateway_token;
+    ClientRateLimiter clientRateLimiter(maxRps);
 
     // 连接回调：全局连接数上限 + 为每连接安装令牌桶限流器。
     // 用 CAS 循环保证原子递增+判断，避免 TOCTOU 竞态。
@@ -219,22 +286,44 @@ int main()
                 conn->forceClose();
                 return;
             }
-            conn->setContext(hyperticket::RateLimiter(maxRps));
+            conn->setContext(ConnectionContext(maxRps));
             LOG_INFO << "connection " << conn->name() << " UP (" << old + 1 << "/" << maxConn << ")";
         }
         else
         {
-            --connCount;
+            std::any *ctx = conn->getMutableContext();
+            auto *connection = ctx && ctx->has_value()
+                ? std::any_cast<ConnectionContext>(ctx) : nullptr;
+            if (connection && connection->counted)
+            {
+                connection->counted = false;
+                connCount.fetch_sub(1);
+            }
             LOG_INFO << "connection " << conn->name() << " DOWN";
         }
     });
 
     // 消息回调：按 '\n' 拆包 -> 限流 -> 解析 JSON -> 投递业务线程池处理。
-    server.setMessageCallback([&workerPool, &service, &metrics](const TcpConnectionPtr &conn, Buffer *buf, shanchuan::Timestamp) {
+    server.setMessageCallback([&workerPool, &service, &metrics, &clientRateLimiter,
+                               maxRequestBytes, gatewayToken](const TcpConnectionPtr &conn, Buffer *buf, shanchuan::Timestamp) {
         while (true)
         {
             const char *eol = buf->findEOL();
-            if (!eol) break;
+            if (!eol)
+            {
+                if (buf->readableBytes() > maxRequestBytes)
+                {
+                    sendJson(conn, makeError(hyperticket::err::kRequestTooLarge));
+                    conn->forceClose();
+                }
+                break;
+            }
+            if (static_cast<size_t>(eol - buf->peek()) > maxRequestBytes)
+            {
+                buf->retrieveUntil(eol + 1);
+                sendJson(conn, makeError(hyperticket::err::kRequestTooLarge));
+                continue;
+            }
             std::string line(buf->peek(), static_cast<size_t>(eol - buf->peek()));
             buf->retrieveUntil(eol + 1);
             if (line.empty()) continue;
@@ -242,8 +331,8 @@ int main()
             std::any *ctx = conn->getMutableContext();
             if (ctx && ctx->has_value())
             {
-                auto *rl = std::any_cast<hyperticket::RateLimiter>(ctx);
-                if (rl && !rl->allow())
+                auto *connection = std::any_cast<ConnectionContext>(ctx);
+                if (connection && !connection->limiter.allow())
                 {
                     sendJson(conn, makeError(hyperticket::err::kRateLimited));
                     if (metrics) metrics->recordError("rate_limited");
@@ -267,12 +356,22 @@ int main()
             // clients can never override their socket address.
             const std::string peerIp = conn->peerAddress().toIp();
             const std::string gatewayIp = req.get("_gateway_client_ip", "").asString();
+            const std::string providedGatewayToken = req.get("_gateway_token", "").asString();
             const bool fromLoopback = peerIp == "127.0.0.1" || peerIp == "::1";
-            req["_client_ip"] = (fromLoopback && !gatewayIp.empty() && gatewayIp.size() <= 64)
+            const bool trustedGateway = fromLoopback || secureEquals(gatewayToken, providedGatewayToken);
+            req["_client_ip"] = (trustedGateway && !gatewayIp.empty() && gatewayIp.size() <= 64)
                 ? gatewayIp : peerIp;
             req.removeMember("_gateway_client_ip");
+            req.removeMember("_gateway_token");
 
-            workerPool.add_task([conn, req, &service, &metrics]() {
+            if (!clientRateLimiter.allow(req["_client_ip"].asString()))
+            {
+                sendJson(conn, makeError(hyperticket::err::kRateLimited));
+                if (metrics) metrics->recordError("client_rate_limited");
+                continue;
+            }
+
+            const bool accepted = workerPool.add_task([conn, req, &service, &metrics]() {
                 auto start = std::chrono::steady_clock::now();
                 // 高可用兜底：业务异常绝不允许穿透 worker 线程（未捕获异常会
                 // std::terminate 杀死整个进程），统一转为 INTERNAL 错误响应。
@@ -349,6 +448,11 @@ int main()
 
                 sendJson(conn, resp);
             });
+            if (!accepted)
+            {
+                sendJson(conn, makeError(hyperticket::err::kServerBusy));
+                if (metrics) metrics->recordError("worker_queue_full");
+            }
         }
     });
 

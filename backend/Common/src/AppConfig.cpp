@@ -99,6 +99,10 @@ namespace hyperticket
             cfg.server.max_connections = envOverrideInt(dotenv, "SERVER_MAX_CONNECTIONS", cfg.server.max_connections);
             cfg.server.max_requests_per_sec = envOverrideInt(
                 dotenv, "SERVER_MAX_REQUESTS_PER_SEC", cfg.server.max_requests_per_sec);
+            cfg.server.max_request_bytes = envOverrideInt(
+                dotenv, "SERVER_MAX_REQUEST_BYTES", cfg.server.max_request_bytes);
+            cfg.server.gateway_token = envOverride(
+                dotenv, "HYPERTICKET_GATEWAY_TOKEN", cfg.server.gateway_token);
             cfg.redis.host = envOverride(dotenv, "REDIS_HOST", cfg.redis.host);
             cfg.redis.port = envOverrideInt(dotenv, "REDIS_PORT", cfg.redis.port);
             cfg.redis.pool_size = envOverrideInt(dotenv, "REDIS_POOL_SIZE", cfg.redis.pool_size);
@@ -120,6 +124,15 @@ namespace hyperticket
             cfg.verification.development_inbox_path = envOverride(
                 dotenv, "HYPERTICKET_VERIFICATION_DEV_INBOX_PATH",
                 cfg.verification.development_inbox_path);
+            cfg.verification.mock_sms_enabled = envOverrideBool(
+                dotenv, "HYPERTICKET_VERIFICATION_MOCK_SMS_ENABLED",
+                cfg.verification.mock_sms_enabled);
+            cfg.verification.expose_mock_sms_code = envOverrideBool(
+                dotenv, "HYPERTICKET_VERIFICATION_EXPOSE_MOCK_CODE",
+                cfg.verification.expose_mock_sms_code);
+            cfg.verification.require_registration_verification = envOverrideBool(
+                dotenv, "HYPERTICKET_VERIFICATION_REQUIRED",
+                cfg.verification.require_registration_verification);
             cfg.payment.simulated_channels_enabled = envOverrideBool(
                 dotenv, "HYPERTICKET_PAYMENT_SIMULATED_CHANNELS_ENABLED",
                 cfg.payment.simulated_channels_enabled);
@@ -174,6 +187,8 @@ namespace hyperticket
             cfg.server.worker_threads = getInt(server, "worker_threads", cfg.server.worker_threads);
             cfg.server.max_connections = getInt(server, "max_connections", cfg.server.max_connections);
             cfg.server.max_requests_per_sec = getInt(server, "max_requests_per_sec", cfg.server.max_requests_per_sec);
+            cfg.server.max_request_bytes = getInt(server, "max_request_bytes", cfg.server.max_request_bytes);
+            cfg.server.gateway_token = getString(server, "gateway_token", cfg.server.gateway_token);
         }
 
         if (root.isMember("log"))

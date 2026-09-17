@@ -22,7 +22,9 @@ namespace hyperticket
         int io_threads = 1;             // 多 IO 线程竞态问题尚未完全修复，默认保持 1
         int worker_threads = 8;
         int max_connections = 1000;     // 全局最大并发连接数
-        int max_requests_per_sec = 20;  // 单连接每秒最大请求数
+        int max_requests_per_sec = 20;  // 单连接和客户端 IP 每秒最大请求数
+        int max_request_bytes = 65536;
+        std::string gateway_token;      // 允许可信 WebSocket Bridge 传递原始客户端 IP
     };
 
     struct LogConfig

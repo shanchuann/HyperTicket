@@ -17,6 +17,8 @@ namespace hyperticket
         constexpr const char *kDbUpdate = "DB_UPDATE";
         constexpr const char *kDbBegin = "DB_BEGIN";
         constexpr const char *kRateLimited = "RATE_LIMITED";
+        constexpr const char *kServerBusy = "SERVER_BUSY";
+        constexpr const char *kRequestTooLarge = "REQUEST_TOO_LARGE";
 
         constexpr const char *kUserNotFound = "USER_NOT_FOUND";
         constexpr const char *kPasswdError = "PASSWD_ERROR";

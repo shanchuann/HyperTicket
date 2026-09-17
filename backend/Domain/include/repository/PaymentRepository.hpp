@@ -80,7 +80,7 @@ namespace hyperticket
             return fetchOne(st, out);
         }
 
-        std::vector<Payment> lockDuePayments(MYSQL *conn, int limit)
+        std::vector<Payment> listDuePayments(MYSQL *conn, int limit)
         {
             std::vector<Payment> out;
             MysqlStmt st(conn, selectColumns() +
@@ -96,6 +96,63 @@ namespace hyperticket
                 out.push_back(payment);
             }
             return out;
+        }
+
+        bool claimPaymentAction(MYSQL *conn, int64_t paymentId,
+                                const std::string &expected, int leaseMs,
+                                std::string &actionToken)
+        {
+            MysqlStmt st(conn,
+                "UPDATE payments SET action_token=REPLACE(UUID(),'-',''),"
+                "next_action_at=DATE_ADD(NOW(3),INTERVAL ? MICROSECOND),"
+                "updated_at=NOW(3) WHERE id=? AND status=? AND next_action_at<=NOW(3)");
+            if (!st.ok()) return false;
+            st.bindInt(0, static_cast<int64_t>(leaseMs) * 1000);
+            st.bindInt(1, paymentId);
+            st.bindString(2, expected);
+            if (!st.execute() || st.affectedRows() == 0) return false;
+            MysqlStmt tokenQuery(conn, "SELECT action_token FROM payments WHERE id=? LIMIT 1");
+            if (!tokenQuery.ok()) return false;
+            tokenQuery.bindInt(0, paymentId);
+            if (!tokenQuery.execute() || !tokenQuery.bindResults(1) || !tokenQuery.fetch()) return false;
+            actionToken = tokenQuery.getString(0);
+            return !actionToken.empty();
+        }
+
+        bool transitionClaimed(MYSQL *conn, int64_t paymentId,
+                               const std::string &expected, const std::string &actionToken,
+                               const std::string &next, const std::string &providerTransactionId,
+                               int nextActionDelayMs = 0)
+        {
+            MysqlStmt st(conn,
+                "UPDATE payments SET status=?,provider_transaction_id=CASE WHEN ?='' THEN provider_transaction_id ELSE ? END,"
+                "action_token='',next_action_at=DATE_ADD(NOW(3),INTERVAL ? MICROSECOND),updated_at=NOW(3) "
+                "WHERE id=? AND status=? AND action_token=?");
+            if (!st.ok()) return false;
+            st.bindString(0, next);
+            st.bindString(1, providerTransactionId);
+            st.bindString(2, providerTransactionId);
+            st.bindInt(3, static_cast<int64_t>(nextActionDelayMs) * 1000);
+            st.bindInt(4, paymentId);
+            st.bindString(5, expected);
+            st.bindString(6, actionToken);
+            return st.execute() && st.affectedRows() > 0;
+        }
+
+        bool retryClaimedPayment(MYSQL *conn, int64_t paymentId,
+                                 const std::string &expected, const std::string &actionToken,
+                                 int nextActionDelayMs)
+        {
+            MysqlStmt st(conn,
+                "UPDATE payments SET action_token='',"
+                "next_action_at=DATE_ADD(NOW(3),INTERVAL ? MICROSECOND),updated_at=NOW(3) "
+                "WHERE id=? AND status=? AND action_token=?");
+            if (!st.ok()) return false;
+            st.bindInt(0, static_cast<int64_t>(nextActionDelayMs) * 1000);
+            st.bindInt(1, paymentId);
+            st.bindString(2, expected);
+            st.bindString(3, actionToken);
+            return st.execute() && st.affectedRows() > 0;
         }
 
         bool lockById(MYSQL *conn, int64_t paymentId, Payment &out)
@@ -162,7 +219,7 @@ namespace hyperticket
             return st.execute();
         }
 
-        std::vector<Refund> lockDueRefunds(MYSQL *conn, int limit)
+        std::vector<Refund> listDueRefunds(MYSQL *conn, int limit)
         {
             std::vector<Refund> out;
             MysqlStmt st(conn,
@@ -171,7 +228,7 @@ namespace hyperticket
                 "r.attempt_count,r.max_attempts "
                 "FROM refunds r JOIN payments p ON p.id=r.payment_id "
                 "WHERE r.status IN ('CREATED','PROCESSING') AND r.next_action_at<=NOW(3) "
-                "ORDER BY r.next_action_at,r.id LIMIT ? FOR UPDATE");
+                "ORDER BY r.next_action_at,r.id LIMIT ?");
             if (!st.ok()) return out;
             st.bindInt(0, limit);
             if (!st.execute() || !st.bindResults(11)) return out;
@@ -194,33 +251,57 @@ namespace hyperticket
             return out;
         }
 
+        bool claimRefundAction(MYSQL *conn, int64_t refundId,
+                               const std::string &expected, int leaseMs,
+                               std::string &actionToken)
+        {
+            MysqlStmt st(conn,
+                "UPDATE refunds SET action_token=REPLACE(UUID(),'-',''),"
+                "next_action_at=DATE_ADD(NOW(3),INTERVAL ? MICROSECOND),"
+                "updated_at=NOW(3) WHERE id=? AND status=? AND next_action_at<=NOW(3)");
+            if (!st.ok()) return false;
+            st.bindInt(0, static_cast<int64_t>(leaseMs) * 1000);
+            st.bindInt(1, refundId);
+            st.bindString(2, expected);
+            if (!st.execute() || st.affectedRows() == 0) return false;
+            MysqlStmt tokenQuery(conn, "SELECT action_token FROM refunds WHERE id=? LIMIT 1");
+            if (!tokenQuery.ok()) return false;
+            tokenQuery.bindInt(0, refundId);
+            if (!tokenQuery.execute() || !tokenQuery.bindResults(1) || !tokenQuery.fetch()) return false;
+            actionToken = tokenQuery.getString(0);
+            return !actionToken.empty();
+        }
+
         bool completeRefund(MYSQL *conn, int64_t refundId, const std::string &expected,
-                            const std::string &providerRefundId)
+                            const std::string &actionToken, const std::string &providerRefundId)
         {
             MysqlStmt st(conn,
                 "UPDATE refunds SET status='SUCCEEDED',provider_refund_id=?,failure_reason='',"
-                "attempt_count=attempt_count+1,next_action_at=NOW(3),updated_at=NOW(3) "
-                "WHERE id=? AND status=?");
+                "attempt_count=attempt_count+1,action_token='',next_action_at=NOW(3),updated_at=NOW(3) "
+                "WHERE id=? AND status=? AND action_token=?");
             if (!st.ok()) return false;
             st.bindString(0, providerRefundId);
             st.bindInt(1, refundId);
             st.bindString(2, expected);
+            st.bindString(3, actionToken);
             return st.execute() && st.affectedRows() > 0;
         }
 
-        bool retryRefund(MYSQL *conn, const Refund &refund, const std::string &failureReason,
+        bool retryRefund(MYSQL *conn, const Refund &refund, const std::string &actionToken,
+                         const std::string &failureReason,
                          int delaySeconds)
         {
             MysqlStmt st(conn,
                 "UPDATE refunds SET status=IF(attempt_count+1>=max_attempts,'FAILED','PROCESSING'),"
-                "failure_reason=?,attempt_count=attempt_count+1,"
+                "failure_reason=?,attempt_count=attempt_count+1,action_token='',"
                 "next_action_at=DATE_ADD(NOW(3),INTERVAL ? SECOND),updated_at=NOW(3) "
-                "WHERE id=? AND status=?");
+                "WHERE id=? AND status=? AND action_token=?");
             if (!st.ok()) return false;
             st.bindString(0, failureReason);
             st.bindInt(1, delaySeconds);
             st.bindInt(2, refund.id);
             st.bindString(3, refund.status);
+            st.bindString(4, actionToken);
             return st.execute() && st.affectedRows() > 0;
         }
 

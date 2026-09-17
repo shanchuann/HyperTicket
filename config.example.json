@@ -13,7 +13,9 @@
     "io_threads": 1,
     "worker_threads": 8,
     "max_connections": 1000,
-    "max_requests_per_sec": 20
+    "max_requests_per_sec": 20,
+    "max_request_bytes": 65536,
+    "gateway_token": ""
   },
   "log": {
     "basename": "hyperticket",

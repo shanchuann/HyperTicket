@@ -55,6 +55,7 @@ set(CHRONOLITE_SRC
 	backend/ChronoLite/src/LogFile.cpp
 	backend/ChronoLite/src/Logger.cpp
 	backend/ChronoLite/src/LogMessage.cpp
+	backend/ChronoLite/src/Platform.cpp
 	backend/ChronoLite/src/Timestamp.cpp
 )
 

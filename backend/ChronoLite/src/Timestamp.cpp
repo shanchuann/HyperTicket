@@ -1,7 +1,9 @@
 #include "Timestamp.hpp"
 #include "LogCommon.hpp"
-#include <stdio.h>
+#include <cstdio>
+#include <cinttypes>
 #include <time.h>
+#include <utility>
 #ifdef _WIN32
 #include <chrono>
 // Windows 下没有 localtime_r，使用 localtime_s 替代，参数顺序相反
@@ -22,34 +24,52 @@ namespace logsys {
     bool Timestamp::valid() const {
         return microSec > 0;
     }
-    std::string Timestamp::toString() const { // 秒.微秒
+    std::string Timestamp::toString(TimeZoneMode mode) const { // 秒.微秒
         char buff[Buffsize] = {0};
         time_t  second = microSec / kMicroSecPerSecond;
         int64_t micsec = microSec % kMicroSecPerSecond;
-        sprintf(buff,"%ld.%06ldZ",second,micsec);
+        std::snprintf(buff, sizeof(buff), "%lld.%06lld%s",
+                      static_cast<long long>(second), static_cast<long long>(micsec),
+                      mode == TimeZoneMode::UTC ? "Z" : "");
         return std::string(buff);
     }
-    std::string Timestamp::toFormattedString(bool showMic) const { // YYYY/MM/DD HH:MM:SS[.微秒]
+    std::string Timestamp::toFormattedString(bool showMic, TimeZoneMode mode) const { // YYYY/MM/DD HH:MM:SS[.微秒]
         char buff[Buffsize] = {0};
         time_t  second = microSec / kMicroSecPerSecond;
         int64_t micsec = microSec % kMicroSecPerSecond;
-        struct tm time;
-        // 获取本地时间 Windows下使用宏替换为 localtime_s，Linux下使用 localtime_r
-        localtime_r(&second,&time); 
-        //gmtime_r(&second,&time);  // 格林尼治时间
-        int pos = sprintf(buff,"%04d/%02d/%02d %02d:%02d:%02d",time.tm_year + 1900,time.tm_mon + 1,time.tm_mday,time.tm_hour,time.tm_min,time.tm_sec);
-        if(showMic) sprintf(buff + pos,".%06ldZ",micsec);
+        struct tm time = {};
+        // 根据配置选择本地时间或 UTC。
+ #ifdef _WIN32
+        const int timeResult = mode == TimeZoneMode::UTC ? gmtime_s(&time, &second) : localtime_s(&time, &second);
+        if (timeResult != 0) return {};
+ #else
+        const auto *timeResult = mode == TimeZoneMode::UTC ? gmtime_r(&second, &time) : localtime_r(&second, &time);
+        if (timeResult == nullptr) return {};
+ #endif
+        int pos = std::snprintf(buff, sizeof(buff), "%04d/%02d/%02d %02d:%02d:%02d",
+                                time.tm_year + 1900, time.tm_mon + 1, time.tm_mday,
+                                time.tm_hour, time.tm_min, time.tm_sec);
+        if(showMic) pos += std::snprintf(buff + pos, sizeof(buff) - static_cast<size_t>(pos), ".%06lld", static_cast<long long>(micsec));
+        if (mode == TimeZoneMode::UTC) std::snprintf(buff + pos, sizeof(buff) - static_cast<size_t>(pos), "Z");
         return std::string(buff);
     }
-    std::string Timestamp::toFileString(bool showMic) const { // YYYYMMDD-HHMMSS[.微秒]
+    std::string Timestamp::toFileString(bool showMic, TimeZoneMode mode) const { // YYYYMMDD-HHMMSS[.微秒]
         char buff[Buffsize] = {0};
         time_t  second = microSec / kMicroSecPerSecond;
         int64_t micsec = microSec % kMicroSecPerSecond;
-        struct tm time;
-        localtime_r(&second,&time); // 本地时间
-        //gmtime_r(&second,&time);  // 格林尼治时间
-        int pos = sprintf(buff,"%04d%02d%02d-%02d%02d%02d",time.tm_year + 1900,time.tm_mon + 1,time.tm_mday,time.tm_hour,time.tm_min,time.tm_sec);
-        if(showMic) sprintf(buff + pos,".%06ldZ",micsec);
+        struct tm time = {};
+ #ifdef _WIN32
+        const int timeResult = mode == TimeZoneMode::UTC ? gmtime_s(&time, &second) : localtime_s(&time, &second);
+        if (timeResult != 0) return {};
+ #else
+        const auto *timeResult = mode == TimeZoneMode::UTC ? gmtime_r(&second, &time) : localtime_r(&second, &time);
+        if (timeResult == nullptr) return {};
+ #endif
+        int pos = std::snprintf(buff, sizeof(buff), "%04d%02d%02d-%02d%02d%02d",
+                                time.tm_year + 1900, time.tm_mon + 1, time.tm_mday,
+                                time.tm_hour, time.tm_min, time.tm_sec);
+        if(showMic) pos += std::snprintf(buff + pos, sizeof(buff) - static_cast<size_t>(pos), ".%06lld", static_cast<long long>(micsec));
+        if (mode == TimeZoneMode::UTC) std::snprintf(buff + pos, sizeof(buff) - static_cast<size_t>(pos), "Z");
         return std::string(buff);
     }
     int64_t Timestamp::getMicroSec() const {

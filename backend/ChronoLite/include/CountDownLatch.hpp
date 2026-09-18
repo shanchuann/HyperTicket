@@ -14,6 +14,7 @@ namespace logsys
         std::condition_variable cond_;
     public:
         CountDownLatch(int count);
+        void reset(int count);
         void wait();
         void countDown();
         int getCount() const;

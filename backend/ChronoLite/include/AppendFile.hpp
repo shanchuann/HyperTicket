@@ -10,10 +10,11 @@ namespace logsys
     class AppendFile
     {
     private:
-        static const size_t FILE_BUFF_SIZE = 128 * 1024; // 128k 测试时采用小缓冲区，应用后应调整为1M（1024*1024）或更大
+        static const size_t FILE_BUFF_SIZE = 128 * 1024; // 128k 测试时采用小缓冲区，应用后应调整为1M或更大
         std::unique_ptr<char[]> buffer_; 
         FILE *fp_;
         size_t writenBytes_;
+        size_t failedWrites_;
         size_t write(const char *msg, const size_t len);
     public:
         AppendFile(const std::string &filename);
@@ -22,6 +23,7 @@ namespace logsys
         void append(const char *msg, const size_t len);  // C 风格
         void flush();
         size_t getWriteBytes() const;
+        size_t getFailedWrites() const;
     };
 } // namespace logsys
 #endif // APPENDFILE_HPP

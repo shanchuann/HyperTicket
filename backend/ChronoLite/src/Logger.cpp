@@ -1,62 +1,158 @@
-#include <stdio.h>
+#include <cstdio>
 #include <cstdlib>
+#include <chrono>
+#include <algorithm>
+#include <sstream>
+#include <unordered_map>
+#include <vector>
+#include <utility>
 #include "Logger.hpp"
 
 namespace logsys
 {
-    void defaultOutput(const std::string &msg) { 
-        size_t n = fwrite(msg.c_str(), sizeof(char), msg.size(), stdout); 
-    }
-    void defaultFlush() { 
-        fflush(stdout); 
-    }
-    /*
-    环境变量控制日志等级，优先级从高到低依次为 FATAL > ERROR > WARN > INFO > DEBUG > TRACE，如果没有设置任何环境变量，则默认日志等级为 INFO。
-    当前项目使用config.json配置文件来控制日志等级，因此注释掉环境变量控制日志等级的代码。
-    logsys::LOG_LEVEL InitLogLevel() {
-        if      (::getenv("LOGSYS_LOG_TRACE")) return logsys::LOG_LEVEL::TRACE;
-        else if (::getenv("LOGSYS_LOG_DEBUG")) return logsys::LOG_LEVEL::DEBUG;
-        else if (::getenv("LOGSYS_LOG_INFO"))  return logsys::LOG_LEVEL:: INFO;
-        else if (::getenv("LOGSYS_LOG_WARN"))  return logsys::LOG_LEVEL:: WARN;
-        else if (::getenv("LOGSYS_LOG_ERROR")) return logsys::LOG_LEVEL::ERROR;
-        else if (::getenv("LOGSYS_LOG_FATAL")) return logsys::LOG_LEVEL::FATAL;
-        else return logsys::LOG_LEVEL::INFO; // 默认日志等级为 INFO
-    }
-    */
+    namespace {
+        struct DedupEntry {
+            std::string lastMessage;
+            std::chrono::steady_clock::time_point lastSeen;
+            std::size_t repeats = 0;
+        };
+        std::mutex dedupMutex;
+        std::unordered_map<std::string, DedupEntry> dedupEntries;
 
-    Logger::OutputFun Logger::s_output_ = defaultOutput;
-    Logger::FlushFun  Logger::s_flush_  = defaultFlush;
-    Logger::FatalFun  Logger::s_fatal_  = nullptr;        // 默认无清理操作
+        bool dedupAllowed(LogCategory category, LOG_LEVEL level) {
+            return category == LogCategory::General && level != LOG_LEVEL::FATAL;
+        }
 
-    void Logger::SetOuput(OutputFun out)  { s_output_ = out;  }
-    void Logger::SetFlush(FlushFun flush) { s_flush_  = flush; }
-    void Logger::SetFatal(FatalFun  fun)  { s_fatal_  = fun;  }
+        std::string dedupKey(LOG_LEVEL level, const std::string &source, const std::string &body) {
+            return std::to_string(static_cast<int>(level)) + "|" + source + "|" + body;
+        }
 
-    Logger::Logger(const logsys::LOG_LEVEL &level, const std::string &filename,
-                   const std::string &funcname, const int line)
-        : impl_(level, filename, funcname, line) {}
-
-    Logger::~Logger() {
-        impl_ << "\n";
-        s_output_(impl_.toString());
-        s_flush_();   // AsynLogging::flush() 是同步写盘，FATAL 消息此时已落盘
-
-        if (impl_.getLogLevel() == LOG_LEVEL::FATAL) {
-            fprintf(stderr, "FATAL:PROCESS EXIT\n");
-            // 执行应用层注册的清理（如 asyncLog.stop()），确保后台线程退出
-            // 注意：回调内不能再写日志，否则死递归
-            if (s_fatal_) s_fatal_();
-            // abort() 而非 exit()：
-            // 1. 不触发 atexit/静态析构，避免析构过程中再次进入 Logger
-            // 2. 发送 SIGABRT，产生 core dump，保留现场供事后调试
-            ::abort();
+        std::vector<std::string> deduplicate(LOG_LEVEL level, LogCategory category,
+                                              const std::string &source, const std::string &body,
+                                              const std::string &message) {
+            if (!Logger::dedupEnabled() || !dedupAllowed(category, level)) {
+                return {message};
+            }
+            const auto now = std::chrono::steady_clock::now();
+            const auto window = std::chrono::seconds(Logger::dedupWindowSeconds());
+            const std::string key = dedupKey(level, source, body);
+            std::lock_guard<std::mutex> lock(dedupMutex);
+            auto &entry = dedupEntries[key];
+            if (entry.lastMessage.empty() || now - entry.lastSeen > window) {
+                std::vector<std::string> result;
+                if (!entry.lastMessage.empty() && entry.repeats > 0) {
+                    result.push_back(entry.lastMessage + " [repeated " + std::to_string(entry.repeats) + " times]");
+                }
+                entry.lastMessage = message;
+                entry.lastSeen = now;
+                entry.repeats = 0;
+                if (dedupEntries.size() > 4096) dedupEntries.erase(dedupEntries.begin());
+                result.push_back(message);
+                return result;
+            }
+            entry.lastSeen = now;
+            entry.repeats += 1;
+            return {};
         }
     }
-    std::atomic<LOG_LEVEL> Logger::s_level_{LOG_LEVEL::INFO};
-    logsys::LOG_LEVEL Logger::getLogLevel() {
-        return s_level_.load(std::memory_order_relaxed);
+
+    void defaultOutput(const std::string &msg) { 
+        std::fwrite(msg.c_str(), sizeof(char), msg.size(), stdout);
     }
-    void Logger::SetLogLevel(const LOG_LEVEL &level) {
-        s_level_.store(level, std::memory_order_relaxed);
+    void defaultFlush() { 
+        std::fflush(stdout);
     }
+    logsys::LOG_LEVEL InitLogLevel() {
+        if (::getenv("LOGSYS::LOG_TRACE")) return logsys::LOG_LEVEL::TRACE;
+        else if (::getenv("LOGSYS::LOG_DEBUG")) return logsys::LOG_LEVEL::DEBUG;
+        else return logsys::LOG_LEVEL::INFO;
+    }
+    Logger::OutputFun Logger::s_output_ = defaultOutput;
+    Logger::FlushFun  Logger::s_flush_  = defaultFlush;
+    bool Logger::s_flushOnEachMessage_ = true;
+    std::function<void()> Logger::s_fatalHandler_ = [] { std::exit(EXIT_FAILURE); };
+    std::atomic<TimeZoneMode> Logger::s_timeZone_{TimeZoneMode::Local};
+    std::atomic<bool> Logger::s_dedupEnabled_{false};
+    std::atomic<int> Logger::s_dedupWindowSeconds_{10};
+    std::mutex Logger::s_configMutex_;
+    void Logger::SetOutput(OutputFun out) {
+        std::lock_guard<std::mutex> lock(s_configMutex_);
+        s_output_ = std::move(out);
+    }
+    void Logger::SetOuput(OutputFun out)  { SetOutput(std::move(out)); }
+    void Logger::SetFlush(FlushFun flush) {
+        std::lock_guard<std::mutex> lock(s_configMutex_);
+        s_flush_ = std::move(flush);
+    }
+    void Logger::SetFlushOnEachMessage(bool enabled) {
+        std::lock_guard<std::mutex> lock(s_configMutex_);
+        s_flushOnEachMessage_ = enabled;
+    }
+    void Logger::SetFatalHandler(std::function<void()> handler) {
+        std::lock_guard<std::mutex> lock(s_configMutex_);
+        s_fatalHandler_ = handler ? std::move(handler) : [] { std::exit(EXIT_FAILURE); };
+    }
+    void Logger::SetTimeZone(TimeZoneMode mode) { s_timeZone_.store(mode, std::memory_order_relaxed); }
+    TimeZoneMode Logger::GetTimeZone() { return s_timeZone_.load(std::memory_order_relaxed); }
+    void Logger::SetDeduplication(bool enabled, int windowSeconds) {
+        const int normalizedWindow = std::max(1, windowSeconds);
+        const int previousWindow = s_dedupWindowSeconds_.exchange(normalizedWindow, std::memory_order_relaxed);
+        if (!enabled || previousWindow != normalizedWindow) {
+            std::lock_guard<std::mutex> lock(dedupMutex);
+            dedupEntries.clear();
+        }
+        s_dedupEnabled_.store(enabled, std::memory_order_relaxed);
+    }
+    bool Logger::shouldLog(LOG_LEVEL level) { return logsys::shouldLog(level, getLogLevel()); }
+    bool Logger::dedupEnabled() { return s_dedupEnabled_.load(std::memory_order_relaxed); }
+    int Logger::dedupWindowSeconds() { return s_dedupWindowSeconds_.load(std::memory_order_relaxed); }
+    void Logger::FlushDeduplicated() {
+        OutputFun output;
+        FlushFun flush;
+        {
+            std::lock_guard<std::mutex> lock(s_configMutex_);
+            output = s_output_;
+            flush = s_flush_;
+        }
+        std::vector<std::string> summaries;
+        {
+            std::lock_guard<std::mutex> lock(dedupMutex);
+            for (auto &[key, entry] : dedupEntries) {
+                if (entry.repeats > 0) {
+                    summaries.push_back(entry.lastMessage + " [repeated " + std::to_string(entry.repeats) + " times]\n");
+                    entry.repeats = 0;
+                }
+            }
+        }
+        for (const auto &summary : summaries) output(summary);
+        if (!summaries.empty()) flush();
+    }
+    Logger::Logger(const logsys::LOG_LEVEL &level, const std::string &filename, const std::string &funcname,
+                   const int line, LogCategory category)
+        : impl_(level, filename, funcname, line, GetTimeZone()), category_(category) {}
+    Logger::~Logger() {
+        impl_ << "\n";
+        OutputFun output;
+        FlushFun flush;
+        std::function<void()> fatalHandler;
+        bool flushEachMessage;
+        {
+            std::lock_guard<std::mutex> lock(s_configMutex_);
+            output = s_output_;
+            flush = s_flush_;
+            fatalHandler = s_fatalHandler_;
+            flushEachMessage = s_flushOnEachMessage_;
+        }
+        for (const auto &message : deduplicate(impl_.getLogLevel(), category_, impl_.sourceKey(), impl_.body(), impl_.toString())) {
+            output(message);
+        }
+        if (flushEachMessage) flush();
+        if (impl_.getLogLevel() == LOG_LEVEL::FATAL) {
+            std::fprintf(stderr, "PROCESS EXIT\n");
+            fatalHandler();
+        }
+    }
+    std::atomic<logsys::LOG_LEVEL> Logger::s_level_{InitLogLevel()};
+    logsys::LOG_LEVEL Logger::getLogLevel() { return s_level_.load(std::memory_order_relaxed); }
+    void Logger::SetLogLevel(const LOG_LEVEL &level) { s_level_.store(level, std::memory_order_relaxed); }
 }

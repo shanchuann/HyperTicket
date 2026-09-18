@@ -95,22 +95,16 @@ namespace logsys
     void AsynLogging::start() {
         std::lock_guard<std::mutex> lock(mutex_);
         if (pthread_) throw std::logic_error("AsynLogging cannot be started twice");
-        latch_.reset(1);
         running_ = true;
         pthread_.reset(new std::thread(&AsynLogging::workthreadfunc, this));
         latch_.wait();
     }
     void AsynLogging::stop() {
-        std::unique_ptr<std::thread> thread;
-        {
-            std::lock_guard<std::mutex> lock(mutex_);
-            if (!pthread_) return;
-            running_ = false;
-            thread = std::move(pthread_);
-        }
+        if (!pthread_) return;
+        running_ = false;
         cond_.notify_all();
         spaceCond_.notify_all();
-        if (thread->joinable()) thread->join();
+        if (pthread_->joinable()) pthread_->join();
     }
     void AsynLogging::flush() {
         std::deque<std::string> bufferToWriter;
